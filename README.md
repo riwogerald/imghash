@@ -4,6 +4,18 @@ A powerful tool for modifying image file hashes while preserving their visual ap
 
 ## LIVE TEST LINK: https://image-hash-spoofer.netlify.app/
 
+## Original Problem Statement
+
+Build a tool that takes an image and an arbitrary hexstring and outputs an adjusted file that displays identically to the human eye (when opened in image viewers) but has a hash that begins with the given hexstring.
+It should work in such a way that we can run, e.g.
+
+spoof 0x24 original.jpg altered.jpg
+and get a file altered.jpg such that running the sum on a Linux machine produces output like this:
+sha512sum altered.jpg
+2448a6512f[...more bytes...]93de43f4b5b  altered.jpg
+
+You can use a different image format (PNG, TIFF, etc.) if you find it better suited to the problem. Also, you can change the hash algorithm to another SHA-based one if you deem it more appropriate. (Obviously, the name spoof is only used as an example; you can name your program as you wish.)
+
 ## Features
 
 - **Multiple Formats**: Supports PNG and JPEG image formats
