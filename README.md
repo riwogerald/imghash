@@ -2,6 +2,10 @@
 
 A powerful tool for modifying image file hashes while preserving their visual appearance. This tool adds invisible metadata to image files to make their hash start with a desired prefix.
 
+Here's what the main dashboard looks like:
+
+![Main dashboard for Image Hash Spoofer tool showing a web interface.](screenshots/dashboard.png)
+
 ## LIVE TEST LINK: https://image-hash-spoofer.netlify.app/
 
 ## Original Problem Statement
