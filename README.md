@@ -19,6 +19,7 @@ sha512sum altered.jpg
 2448a6512f[...more bytes...]93de43f4b5b  altered.jpg
 
 You can use a different image format (PNG, TIFF, etc.) if you find it better suited to the problem. Also, you can change the hash algorithm to another SHA-based one if you deem it more appropriate. (Obviously, the name spoof is only used as an example; you can name your program as you wish.)
+
 Output Example for 0x24:
 ![Test Data output.](screenshots/test.png)
 
