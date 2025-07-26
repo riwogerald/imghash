@@ -1,5 +1,5 @@
 import fs from 'fs';
-import crypto from 'crypto';
+import { createHash } from 'node:crypto';
 import { Buffer } from 'buffer';
 
 class ImageHashSpoofer {
@@ -133,7 +133,7 @@ class ImageHashSpoofer {
         this.createPNGChunk(Buffer.from('IEND'), Buffer.alloc(0))
       ]);
 
-      const hash = crypto.createHash(hashAlgorithm).update(testContent).digest('hex');
+      const hash = createHash(hashAlgorithm).update(testContent).digest('hex');
       
       if (hash.startsWith(targetPrefix.toLowerCase())) {
         console.log(`Found matching hash after ${i + 1} attempts!`);
@@ -156,7 +156,7 @@ class ImageHashSpoofer {
       const comment = `Hash attempt ${i} - ${Date.now()}`;
       const testContent = this.addJPEGComment(originalContent, comment);
 
-      const hash = crypto.createHash(hashAlgorithm).update(testContent).digest('hex');
+      const hash = createHash(hashAlgorithm).update(testContent).digest('hex');
       
       if (hash.startsWith(targetPrefix.toLowerCase())) {
         console.log(`Found matching hash after ${i + 1} attempts!`);
@@ -201,7 +201,7 @@ class ImageHashSpoofer {
     console.log(`Successfully created spoofed image: ${outputPath}`);
     
     // Verify the result
-    const verification = crypto.createHash(hashAlgorithm).update(result).digest('hex');
+    const verification = createHash(hashAlgorithm).update(result).digest('hex');
     console.log(`Verification hash: ${verification}`);
   }
 }
