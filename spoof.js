@@ -243,6 +243,6 @@ function main() {
 export { ImageHashSpoofer };
 
 // Run CLI if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))) {
   main();
 }
