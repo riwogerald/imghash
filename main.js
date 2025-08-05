@@ -268,17 +268,66 @@ class UI {
         const form = document.getElementById('spoofForm');
         const fileInput = document.getElementById('imageFile');
         const fileDisplay = document.getElementById('fileDisplay');
+        const fileInputWrapper = document.querySelector('.file-input-wrapper');
 
         fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
+                // Validate file type
+                const validTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+                if (!validTypes.includes(file.type)) {
+                    this.showResult('Please select a valid PNG or JPEG image file', 'error');
+                    fileInput.value = '';
+                    return;
+                }
+                
+                // Validate file size (max 50MB)
+                if (file.size > 50 * 1024 * 1024) {
+                    this.showResult('File size too large. Please select a file smaller than 50MB', 'error');
+                    fileInput.value = '';
+                    return;
+                }
+                
                 fileDisplay.classList.add('has-file');
                 fileDisplay.innerHTML = `
                     <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
                     <span>${file.name}</span>
+                    <button type="button" class="remove-file" onclick="this.parentElement.parentElement.querySelector('input').value=''; this.parentElement.classList.remove('has-file'); this.parentElement.innerHTML='<svg class=\\"upload-icon\\" fill=\\"none\\" stroke=\\"currentColor\\" viewBox=\\"0 0 24 24\\"><path stroke-linecap=\\"round\\" stroke-linejoin=\\"round\\" stroke-width=\\"2\\" d=\\"M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12\\"></path></svg><span>Click to select an image file</span>';">×</button>
                 `;
+            } else {
+                fileDisplay.classList.remove('has-file');
+                fileDisplay.innerHTML = `
+                    <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    <span>Click to select an image file</span>
+                `;
+            }
+        });
+
+        // Handle drag and drop
+        fileInputWrapper.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileDisplay.classList.add('drag-over');
+        });
+
+        fileInputWrapper.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            fileDisplay.classList.remove('drag-over');
+        });
+
+        fileInputWrapper.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileDisplay.classList.remove('drag-over');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                // Trigger change event
+                const event = new Event('change', { bubbles: true });
+                fileInput.dispatchEvent(event);
             }
         });
 
@@ -303,6 +352,13 @@ class UI {
 
         if (!targetHash.startsWith('0x')) {
             this.showResult('Target hash must start with "0x"', 'error');
+            return;
+        }
+
+        // Additional validation for target hash
+        const hexPattern = /^0x[0-9a-fA-F]+$/;
+        if (!hexPattern.test(targetHash)) {
+            this.showResult('Target hash must be a valid hexadecimal string (e.g., 0x24, 0xabc123)', 'error');
             return;
         }
 
