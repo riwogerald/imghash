@@ -307,6 +307,11 @@ class UI {
             }
         });
 
+        // Handle click on file display to trigger file input
+        fileDisplay.addEventListener('click', () => {
+            fileInput.click();
+        });
+
         // Handle drag and drop
         fileInputWrapper.addEventListener('dragover', (e) => {
             e.preventDefault();
