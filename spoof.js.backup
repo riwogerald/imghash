@@ -1,35 +1,11 @@
 import fs from 'fs';
 import { createHash } from 'node:crypto';
 import { Buffer } from 'buffer';
-import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { cpus } from 'node:os';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-class OptimizedImageHashSpoofer {
+class ImageHashSpoofer {
   constructor() {
     this.PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
     this.JPEG_SIGNATURE = Buffer.from([0xFF, 0xD8]);
-    // Pre-generate CRC table for better performance
-    this.crcTable = this.makeCRCTable();
-    // Use available CPU cores for parallel processing
-    this.numWorkers = Math.min(cpus().length, 8);
-  }
-
-  // Optimized CRC table generation
-  makeCRCTable() {
-    const table = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) {
-        c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
-      }
-      table[n] = c;
-    }
-    return table;
   }
 
   // Create PNG chunk
@@ -45,23 +21,30 @@ class OptimizedImageHashSpoofer {
     return Buffer.concat([length, chunk, crcBuffer]);
   }
 
-  // Optimized CRC32 calculation using pre-generated table
+  // CRC32 calculation for PNG chunks
   calculateCRC32(data) {
+    const crcTable = this.makeCRCTable();
     let crc = 0xFFFFFFFF;
     
     for (let i = 0; i < data.length; i++) {
-      crc = this.crcTable[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+      crc = crcTable[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
     }
     
     return (crc ^ 0xFFFFFFFF) >>> 0;
   }
 
-  // Calculate optimal attempt count based on target difficulty
-  calculateOptimalMaxAttempts(targetPrefix) {
-    const prefixLength = targetPrefix.length;
-    const expectedAttempts = Math.pow(16, prefixLength);
-    // Use statistical approach: 3 * expected attempts for ~95% success rate
-    return Math.min(Math.max(expectedAttempts * 3, 100000), 50000000);
+  makeCRCTable() {
+    if (this.crcTable) return this.crcTable;
+    
+    this.crcTable = new Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) {
+        c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+      }
+      this.crcTable[n] = c;
+    }
+    return this.crcTable;
   }
 
   // Parse PNG chunks
@@ -246,23 +229,18 @@ function main() {
     process.exit(1);
   }
 
-  console.log('🔧 Initializing optimized image hash spoofer...');
-  const spoofer = new OptimizedImageHashSpoofer();
+  const spoofer = new ImageHashSpoofer();
   
   try {
-    const startTime = process.hrtime.bigint();
-    await spoofer.spoofImage(targetHex, inputPath, outputPath, hashAlgorithm);
-    const endTime = process.hrtime.bigint();
-    const processingTimeMs = Number(endTime - startTime) / 1000000;
-    console.log(`🎉 Success! Hash spoofing completed in ${(processingTimeMs / 1000).toFixed(2)}s`);
+    spoofer.spoofImage(targetHex, inputPath, outputPath, hashAlgorithm);
   } catch (error) {
-    console.error(`❌ Error: ${error.message}`);
+    console.error(`Error: ${error.message}`);
     process.exit(1);
   }
 }
 
 // Export for use as module
-export { OptimizedImageHashSpoofer };
+export { ImageHashSpoofer };
 
 // Run CLI if this file is executed directly
 if (import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))) {

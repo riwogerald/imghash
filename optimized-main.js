@@ -1,4 +1,4 @@
-class WebImageHashSpoofer {
+class OptimizedWebImageHashSpoofer {
     constructor() {
         this.PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
         this.JPEG_SIGNATURE = new Uint8Array([0xFF, 0xD8]);
@@ -8,33 +8,20 @@ class WebImageHashSpoofer {
     }
 
     async init() {
-        // Create a Web Worker for hash computation
+        // Create a Web Worker pool for parallel processing
         const workerCode = `
             class OptimizedHashWorker {
                 constructor() {
                     this.PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
                     this.JPEG_SIGNATURE = new Uint8Array([0xFF, 0xD8]);
-                    // Pre-generate CRC table once for better performance
+                    // Pre-generate CRC table once
                     this.crcTable = this.makeCRCTable();
-                    // Pre-computed hex lookup table
-                    this.hexLookup = [];
-                    for (let i = 0; i < 256; i++) {
-                        this.hexLookup[i] = i.toString(16).padStart(2, '0');
-                    }
-                }
-
-                // Optimized hex conversion using pre-computed lookup table
-                bytesToHex(bytes) {
-                    let result = '';
-                    for (let i = 0; i < bytes.length; i++) {
-                        result += this.hexLookup[bytes[i]];
-                    }
-                    return result;
                 }
 
                 async sha256(data) {
                     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
                     const hashArray = new Uint8Array(hashBuffer);
+                    // Optimized hex conversion using lookup table
                     return this.bytesToHex(hashArray);
                 }
 
@@ -44,22 +31,44 @@ class WebImageHashSpoofer {
                     return this.bytesToHex(hashArray);
                 }
 
+                // Optimized hex conversion with lookup table
+                bytesToHex(bytes) {
+                    const hexLookup = [];
+                    for (let i = 0; i < 256; i++) {
+                        hexLookup[i] = i.toString(16).padStart(2, '0');
+                    }
+                    
+                    let result = '';
+                    for (let i = 0; i < bytes.length; i++) {
+                        result += hexLookup[bytes[i]];
+                    }
+                    return result;
+                }
+
                 createPNGChunk(chunkType, data) {
-                    const length = new ArrayBuffer(4);
-                    new DataView(length).setUint32(0, data.length, false);
+                    // Pre-allocate result buffer for better performance
+                    const totalLength = 4 + chunkType.length + data.length + 4;
+                    const result = new Uint8Array(totalLength);
                     
-                    const chunk = new Uint8Array(chunkType.length + data.length);
-                    chunk.set(chunkType, 0);
-                    chunk.set(data, chunkType.length);
+                    // Write length (big-endian)
+                    const length = data.length;
+                    result[0] = (length >>> 24) & 0xFF;
+                    result[1] = (length >>> 16) & 0xFF;
+                    result[2] = (length >>> 8) & 0xFF;
+                    result[3] = length & 0xFF;
                     
-                    const crc = this.calculateCRC32(chunk);
-                    const crcBuffer = new ArrayBuffer(4);
-                    new DataView(crcBuffer).setUint32(0, crc, false);
+                    // Write chunk type and data
+                    result.set(chunkType, 4);
+                    result.set(data, 4 + chunkType.length);
                     
-                    const result = new Uint8Array(4 + chunk.length + 4);
-                    result.set(new Uint8Array(length), 0);
-                    result.set(chunk, 4);
-                    result.set(new Uint8Array(crcBuffer), 4 + chunk.length);
+                    // Calculate and write CRC
+                    const chunkData = result.subarray(4, 4 + chunkType.length + data.length);
+                    const crc = this.calculateCRC32(chunkData);
+                    const crcPos = 4 + chunkType.length + data.length;
+                    result[crcPos] = (crc >>> 24) & 0xFF;
+                    result[crcPos + 1] = (crc >>> 16) & 0xFF;
+                    result[crcPos + 2] = (crc >>> 8) & 0xFF;
+                    result[crcPos + 3] = crc & 0xFF;
                     
                     return result;
                 }
@@ -75,28 +84,29 @@ class WebImageHashSpoofer {
                 }
 
                 makeCRCTable() {
-                    if (this.crcTable) return this.crcTable;
-                    
-                    this.crcTable = new Array(256);
+                    const table = new Uint32Array(256);
                     for (let n = 0; n < 256; n++) {
                         let c = n;
                         for (let k = 0; k < 8; k++) {
                             c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
                         }
-                        this.crcTable[n] = c;
+                        table[n] = c;
                     }
-                    return this.crcTable;
+                    return table;
                 }
 
                 parsePNGChunks(content) {
                     const chunks = [];
                     let pos = 8;
 
-                    while (pos < content.length) {
-                        const length = new DataView(content.buffer, content.byteOffset + pos).getUint32(0, false);
+                    while (pos < content.length - 8) {
+                        const length = (content[pos] << 24) | (content[pos + 1] << 16) | 
+                                     (content[pos + 2] << 8) | content[pos + 3];
                         const chunkType = content.slice(pos + 4, pos + 8);
                         
-                        if (!this.arraysEqual(chunkType, new Uint8Array([73, 69, 78, 68]))) { // Not IEND
+                        // Check if not IEND chunk (avoid string comparison)
+                        if (!(chunkType[0] === 73 && chunkType[1] === 69 && 
+                              chunkType[2] === 78 && chunkType[3] === 68)) {
                             chunks.push(content.slice(pos, pos + 8 + length + 4));
                         }
 
@@ -127,44 +137,43 @@ class WebImageHashSpoofer {
 
                     const commentData = new TextEncoder().encode(comment);
                     const segmentLength = commentData.length + 2;
-                    const commentSegment = new Uint8Array(4 + commentData.length);
                     
-                    commentSegment[0] = 0xFF;
-                    commentSegment[1] = 0xFE;
-                    commentSegment[2] = (segmentLength >> 8) & 0xFF;
-                    commentSegment[3] = segmentLength & 0xFF;
-                    commentSegment.set(commentData, 4);
-
-                    const result = new Uint8Array(content.length + commentSegment.length);
-                    result.set(content.slice(0, insertPos), 0);
-                    result.set(commentSegment, insertPos);
-                    result.set(content.slice(insertPos), insertPos + commentSegment.length);
+                    // Pre-allocate result buffer
+                    const result = new Uint8Array(content.length + 4 + commentData.length);
+                    
+                    // Copy parts efficiently
+                    result.set(content.subarray(0, insertPos), 0);
+                    
+                    // Add comment segment
+                    let pos = insertPos;
+                    result[pos++] = 0xFF;
+                    result[pos++] = 0xFE;
+                    result[pos++] = (segmentLength >>> 8) & 0xFF;
+                    result[pos++] = segmentLength & 0xFF;
+                    result.set(commentData, pos);
+                    pos += commentData.length;
+                    
+                    // Copy remaining content
+                    result.set(content.subarray(insertPos), pos);
                     
                     return result;
                 }
 
-                arraysEqual(a, b) {
-                    if (a.length !== b.length) return false;
-                    for (let i = 0; i < a.length; i++) {
-                        if (a[i] !== b[i]) return false;
-                    }
-                    return true;
-                }
-
-                // Calculate optimal attempt count based on target difficulty
+                // Adaptive algorithm to determine optimal attempt count
                 calculateOptimalMaxAttempts(targetPrefix) {
                     const prefixLength = targetPrefix.length;
                     const expectedAttempts = Math.pow(16, prefixLength);
+                    
                     // Use statistical approach: 3 * expected attempts for ~95% success rate
                     return Math.min(Math.max(expectedAttempts * 3, 100000), 10000000);
                 }
 
-                async findMatchingHash(targetHex, originalData, isPNG, hashAlgorithm, maxAttempts = 1000000) {
+                async findMatchingHash(targetHex, originalData, isPNG, hashAlgorithm, maxAttempts, workerId = 0) {
                     const targetPrefix = targetHex.startsWith('0x') ? targetHex.slice(2).toLowerCase() : targetHex.toLowerCase();
                     const optimalMaxAttempts = this.calculateOptimalMaxAttempts(targetPrefix);
-                    const actualMaxAttempts = Math.min(maxAttempts, optimalMaxAttempts);
+                    const actualMaxAttempts = Math.min(maxAttempts || optimalMaxAttempts, optimalMaxAttempts);
                     
-                    // Reduce progress update frequency for better performance (every 50K attempts)
+                    // Reduce progress update frequency for better performance
                     const progressInterval = Math.max(50000, Math.floor(actualMaxAttempts / 100));
                     
                     // Pre-parse chunks for PNG to avoid repeated parsing
@@ -173,7 +182,7 @@ class WebImageHashSpoofer {
                         chunks = this.parsePNGChunks(originalData);
                     }
                     
-                    for (let i = 0; i < actualMaxAttempts; i++) {
+                    for (let i = workerId; i < actualMaxAttempts; i += self.poolSize || 1) {
                         if (i % progressInterval === 0) {
                             self.postMessage({ type: 'progress', attempt: i, maxAttempts: actualMaxAttempts });
                         }
@@ -181,10 +190,12 @@ class WebImageHashSpoofer {
                         let testContent;
                         
                         if (isPNG) {
-                            const testData = new TextEncoder().encode(`Hash attempt ${i} - ${Date.now()}`);
-                            const commentChunk = this.createPNGChunk(new Uint8Array([116, 69, 88, 116]), testData); // tEXt
-                            const iendChunk = this.createPNGChunk(new Uint8Array([73, 69, 78, 68]), new Uint8Array(0)); // IEND
+                            // Use timestamp + counter for better randomness
+                            const testData = new TextEncoder().encode(\`\${Date.now()}-\${i}-\${Math.random()}\`);
+                            const commentChunk = this.createPNGChunk(new Uint8Array([116, 69, 88, 116]), testData);
+                            const iendChunk = this.createPNGChunk(new Uint8Array([73, 69, 78, 68]), new Uint8Array(0));
                             
+                            // Pre-calculate total length and allocate buffer
                             let totalLength = this.PNG_SIGNATURE.length + commentChunk.length + iendChunk.length;
                             chunks.forEach(chunk => totalLength += chunk.length);
                             
@@ -194,17 +205,17 @@ class WebImageHashSpoofer {
                             testContent.set(this.PNG_SIGNATURE, pos);
                             pos += this.PNG_SIGNATURE.length;
                             
-                            chunks.forEach(chunk => {
+                            for (const chunk of chunks) {
                                 testContent.set(chunk, pos);
                                 pos += chunk.length;
-                            });
+                            }
                             
                             testContent.set(commentChunk, pos);
                             pos += commentChunk.length;
                             
                             testContent.set(iendChunk, pos);
                         } else {
-                            const comment = \`Hash attempt \${i} - \${Date.now()}\`;
+                            const comment = \`\${Date.now()}-\${i}-\${Math.random()}\`;
                             testContent = this.addJPEGComment(originalData, comment);
                         }
 
@@ -213,7 +224,7 @@ class WebImageHashSpoofer {
                         if (hash.startsWith(targetPrefix)) {
                             self.postMessage({ 
                                 type: 'success', 
-                                content: Array.from(testContent),
+                                content: testContent,
                                 hash: hash,
                                 attempts: i + 1
                             });
@@ -221,25 +232,34 @@ class WebImageHashSpoofer {
                         }
                     }
 
-                    self.postMessage({ type: 'error', message: \`Could not find matching hash after \${maxAttempts} attempts\` });
+                    self.postMessage({ 
+                        type: 'error', 
+                        message: \`Could not find matching hash after \${actualMaxAttempts} attempts\` 
+                    });
                 }
             }
 
             const worker = new OptimizedHashWorker();
-
+            
             self.onmessage = async function(e) {
-                const { targetHex, originalData, isPNG, hashAlgorithm, maxAttempts } = e.data;
+                const { targetHex, originalData, isPNG, hashAlgorithm, maxAttempts, workerId, poolSize } = e.data;
+                self.poolSize = poolSize;
                 const dataArray = new Uint8Array(originalData);
-                await worker.findMatchingHash(targetHex, dataArray, isPNG, hashAlgorithm, maxAttempts);
+                await worker.findMatchingHash(targetHex, dataArray, isPNG, hashAlgorithm, maxAttempts, workerId);
             };
         `;
 
+        // Create worker pool for parallel processing
         const blob = new Blob([workerCode], { type: 'application/javascript' });
-        this.worker = new Worker(URL.createObjectURL(blob));
+        const workerUrl = URL.createObjectURL(blob);
+        
+        for (let i = 0; i < this.poolSize; i++) {
+            this.workerPool.push(new Worker(workerUrl));
+        }
     }
 
     async spoofImage(targetHex, imageFile, hashAlgorithm = 'sha512', onProgress = null) {
-        if (!this.worker) {
+        if (this.workerPool.length === 0) {
             await this.init();
         }
 
@@ -256,26 +276,55 @@ class WebImageHashSpoofer {
                     return;
                 }
 
-                this.worker.onmessage = (e) => {
+                // Use SharedArrayBuffer for better performance if available
+                let sharedData;
+                try {
+                    sharedData = new SharedArrayBuffer(content.length);
+                    new Uint8Array(sharedData).set(content);
+                } catch (e) {
+                    // Fallback to regular array buffer
+                    sharedData = content.buffer.slice();
+                }
+
+                let resolved = false;
+                let completedWorkers = 0;
+
+                const handleMessage = (workerId) => (e) => {
                     const { type, content: resultContent, hash, attempts, attempt, maxAttempts, message } = e.data;
+                    
+                    if (resolved) return;
                     
                     if (type === 'progress' && onProgress) {
                         onProgress(attempt, maxAttempts);
                     } else if (type === 'success') {
+                        resolved = true;
+                        // Terminate all workers
+                        this.workerPool.forEach(worker => worker.terminate());
+                        
                         const resultArray = new Uint8Array(resultContent);
                         const blob = new Blob([resultArray], { type: isPNG ? 'image/png' : 'image/jpeg' });
                         resolve({ blob, hash, attempts });
                     } else if (type === 'error') {
-                        reject(new Error(message));
+                        completedWorkers++;
+                        if (completedWorkers === this.poolSize) {
+                            resolved = true;
+                            reject(new Error(message));
+                        }
                     }
                 };
 
-                this.worker.postMessage({
-                    targetHex,
-                    originalData: Array.from(content),
-                    isPNG,
-                    hashAlgorithm,
-                    maxAttempts: 1000000
+                // Start all workers
+                this.workerPool.forEach((worker, index) => {
+                    worker.onmessage = handleMessage(index);
+                    worker.postMessage({
+                        targetHex,
+                        originalData: sharedData,
+                        isPNG,
+                        hashAlgorithm,
+                        maxAttempts: 10000000,
+                        workerId: index,
+                        poolSize: this.poolSize
+                    });
                 });
             };
 
@@ -292,10 +341,10 @@ class WebImageHashSpoofer {
     }
 }
 
-// UI Management
+// UI Management (unchanged interface, optimized backend)
 class UI {
     constructor() {
-        this.spoofer = new WebImageHashSpoofer();
+        this.spoofer = new OptimizedWebImageHashSpoofer();
         this.initializeEventListeners();
     }
 
@@ -407,6 +456,8 @@ class UI {
         progress.classList.add('show');
         result.classList.remove('show');
 
+        const startTime = performance.now();
+
         try {
             const { blob, hash, attempts } = await this.spoofer.spoofImage(
                 targetHash,
@@ -420,13 +471,16 @@ class UI {
                 }
             );
 
+            const endTime = performance.now();
+            const processingTime = ((endTime - startTime) / 1000).toFixed(2);
+
             const downloadUrl = URL.createObjectURL(blob);
             const originalExt = imageFile.name.split('.').pop();
             const filename = `spoofed_${targetHash.replace('0x', '')}.${originalExt}`;
 
             this.showResult(`
                 <h3>✅ Success!</h3>
-                <p>Found matching hash after <strong>${attempts.toLocaleString()}</strong> attempts.</p>
+                <p>Found matching hash after <strong>${attempts.toLocaleString()}</strong> attempts in <strong>${processingTime}s</strong>.</p>
                 <div class="hash-display">
                     <strong>Final Hash:</strong><br>
                     ${hash}

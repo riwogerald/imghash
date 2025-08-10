@@ -3,45 +3,27 @@ class WebImageHashSpoofer {
         this.PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
         this.JPEG_SIGNATURE = new Uint8Array([0xFF, 0xD8]);
         this.worker = null;
-        this.workerPool = [];
-        this.poolSize = Math.min(navigator.hardwareConcurrency || 4, 4);
     }
 
     async init() {
         // Create a Web Worker for hash computation
         const workerCode = `
-            class OptimizedHashWorker {
+            class HashWorker {
                 constructor() {
                     this.PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
                     this.JPEG_SIGNATURE = new Uint8Array([0xFF, 0xD8]);
-                    // Pre-generate CRC table once for better performance
-                    this.crcTable = this.makeCRCTable();
-                    // Pre-computed hex lookup table
-                    this.hexLookup = [];
-                    for (let i = 0; i < 256; i++) {
-                        this.hexLookup[i] = i.toString(16).padStart(2, '0');
-                    }
-                }
-
-                // Optimized hex conversion using pre-computed lookup table
-                bytesToHex(bytes) {
-                    let result = '';
-                    for (let i = 0; i < bytes.length; i++) {
-                        result += this.hexLookup[bytes[i]];
-                    }
-                    return result;
                 }
 
                 async sha256(data) {
                     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-                    const hashArray = new Uint8Array(hashBuffer);
-                    return this.bytesToHex(hashArray);
+                    const hashArray = Array.from(new Uint8Array(hashBuffer));
+                    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
                 }
 
                 async sha512(data) {
                     const hashBuffer = await crypto.subtle.digest('SHA-512', data);
-                    const hashArray = new Uint8Array(hashBuffer);
-                    return this.bytesToHex(hashArray);
+                    const hashArray = Array.from(new Uint8Array(hashBuffer));
+                    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
                 }
 
                 createPNGChunk(chunkType, data) {
@@ -65,10 +47,11 @@ class WebImageHashSpoofer {
                 }
 
                 calculateCRC32(data) {
+                    const crcTable = this.makeCRCTable();
                     let crc = 0xFFFFFFFF;
                     
                     for (let i = 0; i < data.length; i++) {
-                        crc = this.crcTable[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+                        crc = crcTable[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
                     }
                     
                     return (crc ^ 0xFFFFFFFF) >>> 0;
@@ -151,37 +134,19 @@ class WebImageHashSpoofer {
                     return true;
                 }
 
-                // Calculate optimal attempt count based on target difficulty
-                calculateOptimalMaxAttempts(targetPrefix) {
-                    const prefixLength = targetPrefix.length;
-                    const expectedAttempts = Math.pow(16, prefixLength);
-                    // Use statistical approach: 3 * expected attempts for ~95% success rate
-                    return Math.min(Math.max(expectedAttempts * 3, 100000), 10000000);
-                }
-
                 async findMatchingHash(targetHex, originalData, isPNG, hashAlgorithm, maxAttempts = 1000000) {
                     const targetPrefix = targetHex.startsWith('0x') ? targetHex.slice(2).toLowerCase() : targetHex.toLowerCase();
-                    const optimalMaxAttempts = this.calculateOptimalMaxAttempts(targetPrefix);
-                    const actualMaxAttempts = Math.min(maxAttempts, optimalMaxAttempts);
                     
-                    // Reduce progress update frequency for better performance (every 50K attempts)
-                    const progressInterval = Math.max(50000, Math.floor(actualMaxAttempts / 100));
-                    
-                    // Pre-parse chunks for PNG to avoid repeated parsing
-                    let chunks;
-                    if (isPNG) {
-                        chunks = this.parsePNGChunks(originalData);
-                    }
-                    
-                    for (let i = 0; i < actualMaxAttempts; i++) {
-                        if (i % progressInterval === 0) {
-                            self.postMessage({ type: 'progress', attempt: i, maxAttempts: actualMaxAttempts });
+                    for (let i = 0; i < maxAttempts; i++) {
+                        if (i % 10000 === 0) {
+                            self.postMessage({ type: 'progress', attempt: i, maxAttempts });
                         }
 
                         let testContent;
                         
                         if (isPNG) {
-                            const testData = new TextEncoder().encode(`Hash attempt ${i} - ${Date.now()}`);
+                            const chunks = this.parsePNGChunks(originalData);
+                            const testData = new TextEncoder().encode(\`Hash attempt \${i} - \${Date.now()}\`);
                             const commentChunk = this.createPNGChunk(new Uint8Array([116, 69, 88, 116]), testData); // tEXt
                             const iendChunk = this.createPNGChunk(new Uint8Array([73, 69, 78, 68]), new Uint8Array(0)); // IEND
                             
@@ -225,7 +190,7 @@ class WebImageHashSpoofer {
                 }
             }
 
-            const worker = new OptimizedHashWorker();
+            const worker = new HashWorker();
 
             self.onmessage = async function(e) {
                 const { targetHex, originalData, isPNG, hashAlgorithm, maxAttempts } = e.data;
