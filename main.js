@@ -350,16 +350,19 @@ class UI {
         // Handle drag and drop
         fileInputWrapper.addEventListener('dragover', (e) => {
             e.preventDefault();
+            e.stopPropagation();
             fileDisplay.classList.add('drag-over');
         });
 
         fileInputWrapper.addEventListener('dragleave', (e) => {
             e.preventDefault();
+            e.stopPropagation();
             fileDisplay.classList.remove('drag-over');
         });
 
         fileInputWrapper.addEventListener('drop', (e) => {
             e.preventDefault();
+            e.stopPropagation();
             fileDisplay.classList.remove('drag-over');
             
             const files = e.dataTransfer.files;
@@ -387,11 +390,14 @@ class UI {
 
         if (!targetHash || !imageFile) {
             this.showResult('Please fill in all fields', 'error');
+            // Scroll to result smoothly
+            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             return;
         }
 
         if (!targetHash.startsWith('0x')) {
             this.showResult('Target hash must start with "0x"', 'error');
+            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             return;
         }
 
@@ -399,6 +405,7 @@ class UI {
         const hexPattern = /^0x[0-9a-fA-F]+$/;
         if (!hexPattern.test(targetHash)) {
             this.showResult('Target hash must be a valid hexadecimal string (e.g., 0x24, 0xabc123)', 'error');
+            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             return;
         }
 
@@ -436,8 +443,16 @@ class UI {
                 </a>
             `, 'success');
 
+            // Scroll to result smoothly after success
+            setTimeout(() => {
+                result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
         } catch (error) {
             this.showResult(`❌ Error: ${error.message}`, 'error');
+            // Scroll to result smoothly after error
+            setTimeout(() => {
+                result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
         } finally {
             button.disabled = false;
             button.textContent = 'Start Hash Spoofing';
@@ -457,4 +472,18 @@ class UI {
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
     new UI();
+    
+    // Prevent default scroll behavior on certain elements
+    document.addEventListener('wheel', (e) => {
+        // Allow normal scrolling on the container
+        const container = document.querySelector('.container');
+        if (container && container.contains(e.target)) {
+            return;
+        }
+    }, { passive: true });
+    
+    // Prevent scroll restoration on page reload
+    if ('scrollRestoration' in history) {
+        history.scrollRestoration = 'manual';
+    }
 });
