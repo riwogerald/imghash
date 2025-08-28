@@ -181,7 +181,7 @@ class WebImageHashSpoofer {
                         let testContent;
                         
                         if (isPNG) {
-                            const testData = new TextEncoder().encode(\`Hash attempt ${i} - ${Date.now()}`);
+                            const testData = new TextEncoder().encode(`Hash attempt ${i} - ${Date.now()}`);
                             const commentChunk = this.createPNGChunk(new Uint8Array([116, 69, 88, 116]), testData); // tEXt
                             const iendChunk = this.createPNGChunk(new Uint8Array([73, 69, 78, 68]), new Uint8Array(0)); // IEND
                             
@@ -204,7 +204,7 @@ class WebImageHashSpoofer {
                             
                             testContent.set(iendChunk, pos);
                         } else {
-                            const comment = \`Hash attempt \${i} - \${Date.now()}\`;
+                            const comment = `Hash attempt ${i} - ${Date.now()}`;
                             testContent = this.addJPEGComment(originalData, comment);
                         }
 
@@ -221,7 +221,7 @@ class WebImageHashSpoofer {
                         }
                     }
 
-                    self.postMessage({ type: 'error', message: \`Could not find matching hash after \${maxAttempts} attempts\` });
+                    self.postMessage({ type: 'error', message: `Could not find matching hash after ${maxAttempts} attempts` });
                 }
             }
 
