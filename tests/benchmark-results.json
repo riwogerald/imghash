@@ -1,0 +1,48 @@
+{
+  "timestamp": "2025-08-28T07:14:57.010Z",
+  "hashPerformance": {
+    "sha256": {
+      "totalTime": 1761.3195999999998,
+      "avgTime": 17.613196,
+      "iterations": 100,
+      "dataSize": 1048576,
+      "throughput": 56.77561301197126
+    },
+    "sha512": {
+      "totalTime": 1404.0522,
+      "avgTime": 14.040522000000001,
+      "iterations": 100,
+      "dataSize": 1048576,
+      "throughput": 71.22242321190052
+    }
+  },
+  "crcPerformance": {
+    "tableGeneration": {
+      "avgTime": 0.02601119999999992,
+      "iterations": 1000
+    },
+    "calculation": {
+      "avgTime": 2.392522499999999,
+      "iterations": 1000,
+      "dataSize": 65536,
+      "throughput": 26.123056313994965
+    }
+  },
+  "imageProcessing": {
+    "pngParsing": {
+      "avgTime": 0.11512000000000626,
+      "iterations": 100,
+      "fileSize": 80346
+    },
+    "jpegCommentInsertion": {
+      "avgTime": 0.24519899999999326,
+      "iterations": 100,
+      "fileSize": 79811
+    }
+  },
+  "environment": {
+    "nodeVersion": "v24.1.0",
+    "platform": "win32",
+    "arch": "x64"
+  }
+}

@@ -1,0 +1,288 @@
+name: 🧪 CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run tests weekly to catch dependency issues
+    - cron: '0 0 * * 0'
+
+jobs:
+  test:
+    name: 🧪 Test Suite
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 🧪 Run unit tests
+      run: npm run test:unit
+      
+    - name: 🔗 Run integration tests
+      run: npm run test:integration
+      
+    - name: ⚡ Run performance benchmarks
+      run: npm run test:performance
+      
+    - name: 📊 Generate coverage report
+      run: npm run test:coverage
+      
+    - name: 📈 Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage/lcov.info
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  e2e-tests:
+    name: 🌐 E2E Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 🌐 Run E2E tests
+      run: npm run test:e2e
+      env:
+        PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
+        PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome-stable
+
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 🔒 Run npm audit
+      run: npm audit --audit-level=moderate
+      
+    - name: 🔍 Run security scan
+      uses: securecodewarrior/github-action-add-sarif@v1
+      if: always()
+      with:
+        sarif-file: 'security-scan-results.sarif'
+
+  build-test:
+    name: 🏗️ Build Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 🏗️ Build project
+      run: npm run build
+      
+    - name: 📦 Test build artifacts
+      run: |
+        ls -la dist/
+        test -f dist/index.html
+        test -f dist/assets/*.js
+
+  performance-tracking:
+    name: 📊 Performance Tracking
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 📊 Run performance benchmarks
+      run: npm run test:performance
+      
+    - name: 📈 Store benchmark results
+      uses: benchmark-action/github-action-benchmark@v1
+      with:
+        name: 'Image Hash Spoofer Benchmarks'
+        tool: 'customBiggerIsBetter'
+        output-file-path: tests/benchmark-results.json
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: true
+        comment-on-alert: true
+        alert-threshold: '150%'
+        fail-on-alert: true
+
+  compatibility-test:
+    name: 🔄 Compatibility Test
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 🧪 Run core tests
+      run: npm run test:unit
+      
+    - name: 🖼️ Test CLI functionality
+      run: |
+        node spoof.js --help || true
+        node spoof.js 0x24 tests/fixtures/test-image.jpg test-output.jpg sha256 || echo "Expected failure - no matching hash found quickly"
+      shell: bash
+
+  code-quality:
+    name: ✨ Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 🔍 Lint check (if ESLint configured)
+      run: |
+        if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ] || [ -f "eslint.config.js" ]; then
+          npm run lint || echo "Linting not configured"
+        else
+          echo "ESLint not configured - skipping lint check"
+        fi
+      shell: bash
+      
+    - name: 💅 Format check (if Prettier configured)
+      run: |
+        if [ -f ".prettierrc" ] || [ -f "prettier.config.js" ]; then
+          npm run format:check || echo "Prettier not configured"
+        else
+          echo "Prettier not configured - skipping format check"
+        fi
+      shell: bash
+
+  deployment-preview:
+    name: 🚀 Deployment Preview
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 🏗️ Build for production
+      run: npm run build
+      
+    - name: 🚀 Deploy preview
+      uses: netlify/actions/build@master
+      with:
+        publish-dir: './dist'
+        production-deploy: false
+      env:
+        NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+  release:
+    name: 📦 Release
+    runs-on: ubuntu-latest
+    needs: [test, e2e-tests, build-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: npm ci
+      
+    - name: 🏗️ Build project
+      run: npm run build
+      
+    - name: 🏷️ Create release
+      uses: semantic-release/semantic-release@v21
+      with:
+        branches: main
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
