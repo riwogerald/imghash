@@ -469,9 +469,412 @@ class UI {
     }
 }
 
+// Analytics Dashboard functionality
+let analyticsVisible = false;
+let performanceAnalytics = null;
+let chartManager = null;
+
+// Initialize analytics when needed
+function initializeAnalytics() {
+    if (!performanceAnalytics) {
+        // Simple analytics implementation without external dependencies for now
+        performanceAnalytics = {
+            data: JSON.parse(localStorage.getItem('imghash-analytics') || '{}'),
+            recordAttempt: function(data) {
+                if (!this.data.attempts) this.data.attempts = [];
+                this.data.attempts.push({
+                    timestamp: new Date().toISOString(),
+                    ...data
+                });
+                localStorage.setItem('imghash-analytics', JSON.stringify(this.data));
+                this.updateStats();
+            },
+            updateStats: function() {
+                const attempts = this.data.attempts || [];
+                const successes = attempts.filter(a => a.success);
+                
+                document.getElementById('totalAttempts').textContent = attempts.length;
+                document.getElementById('totalSuccesses').textContent = successes.length;
+                document.getElementById('overallSuccessRate').textContent = 
+                    attempts.length > 0 ? Math.round((successes.length / attempts.length) * 100) + '%' : '0%';
+                
+                // Weekly stats
+                const oneWeek = 7 * 24 * 60 * 60 * 1000;
+                const weeklyAttempts = attempts.filter(a => 
+                    Date.now() - new Date(a.timestamp).getTime() <= oneWeek
+                );
+                document.getElementById('weeklyAttempts').textContent = weeklyAttempts.length;
+            },
+            clearData: function() {
+                this.data = {};
+                localStorage.removeItem('imghash-analytics');
+                this.updateStats();
+            },
+            exportData: function() {
+                const data = {
+                    exportDate: new Date().toISOString(),
+                    analytics: this.data
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'imghash-analytics-' + new Date().toISOString().split('T')[0] + '.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        };
+        performanceAnalytics.updateStats();
+    }
+}
+
+// Toggle analytics dashboard visibility
+function toggleAnalytics() {
+    const analyticsSection = document.getElementById('analyticsSection');
+    const toggleBtn = document.getElementById('toggleAnalyticsBtn');
+    
+    analyticsVisible = !analyticsVisible;
+    
+    if (analyticsVisible) {
+        analyticsSection.style.display = 'block';
+        toggleBtn.textContent = '📊 Hide Performance Analytics';
+        initializeAnalytics();
+        createSimpleCharts();
+    } else {
+        analyticsSection.style.display = 'none';
+        toggleBtn.textContent = '📊 Show Performance Analytics';
+    }
+}
+
+// Clear analytics data
+function clearAnalytics() {
+    if (confirm('Are you sure you want to clear all analytics data? This cannot be undone.')) {
+        initializeAnalytics();
+        performanceAnalytics.clearData();
+        createSimpleCharts(); // Refresh charts
+    }
+}
+
+// Export analytics data
+function exportAnalytics() {
+    initializeAnalytics();
+    performanceAnalytics.exportData();
+}
+
+// Generate prediction
+function generatePrediction() {
+    const prefixInput = document.getElementById('predictionPrefix');
+    const algorithmSelect = document.getElementById('predictionAlgorithm');
+    const resultsDiv = document.getElementById('predictionResults');
+    
+    const targetPrefix = prefixInput.value.trim();
+    if (!targetPrefix) {
+        alert('Please enter a target prefix (e.g., 0x24)');
+        return;
+    }
+    
+    // Validate hex prefix
+    if (!targetPrefix.match(/^0x[0-9a-fA-F]+$/)) {
+        alert('Please enter a valid hex prefix (e.g., 0x24, 0xabc)');
+        return;
+    }
+    
+    const prefixLength = targetPrefix.replace('0x', '').length;
+    const algorithm = algorithmSelect.value;
+    
+    // Calculate theoretical attempts
+    const theoreticalAttempts = Math.pow(16, prefixLength);
+    const estimatedSeconds = Math.round(theoreticalAttempts / 1000); // Rough estimate: 1000 attempts/sec
+    const difficulty = prefixLength <= 2 ? 'Easy' : prefixLength <= 4 ? 'Medium' : prefixLength <= 6 ? 'Hard' : 'Very Hard';
+    
+    resultsDiv.style.display = 'block';
+    resultsDiv.innerHTML = `
+        <div class="prediction-item">
+            <span class="prediction-label">Difficulty:</span>
+            <span class="prediction-value">${difficulty}</span>
+        </div>
+        <div class="prediction-item">
+            <span class="prediction-label">Expected Attempts:</span>
+            <span class="prediction-value">${theoreticalAttempts.toLocaleString()}</span>
+        </div>
+        <div class="prediction-item">
+            <span class="prediction-label">Estimated Time:</span>
+            <span class="prediction-value">${estimatedSeconds < 60 ? estimatedSeconds + 's' : Math.round(estimatedSeconds/60) + 'm'}</span>
+        </div>
+        <div class="prediction-item">
+            <span class="prediction-label">Algorithm:</span>
+            <span class="prediction-value">${algorithm.toUpperCase()}</span>
+        </div>
+        <div class="prediction-item">
+            <span class="prediction-label">Success Probability:</span>
+            <span class="prediction-value">~63% after ${theoreticalAttempts.toLocaleString()} attempts</span>
+        </div>
+    `;
+}
+
+// Create simple charts without external Chart.js dependency
+function createSimpleCharts() {
+    initializeAnalytics();
+    const attempts = performanceAnalytics.data.attempts || [];
+    
+    // Create simple visualizations for each chart area
+    createSimpleSuccessChart(attempts);
+    createSimplePrefixChart(attempts);
+    createSimpleAlgorithmChart(attempts);
+    createSimplePerformanceChart(attempts);
+}
+
+function createSimpleSuccessChart(attempts) {
+    const canvas = document.getElementById('successRateChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+    
+    // Simple bar chart showing success rate
+    const successes = attempts.filter(a => a.success).length;
+    const failures = attempts.length - successes;
+    const total = attempts.length;
+    
+    if (total === 0) {
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data available yet', width / 2, height / 2);
+        return;
+    }
+    
+    const successRate = (successes / total) * 100;
+    const barWidth = width * 0.6;
+    const barHeight = 30;
+    const startX = (width - barWidth) / 2;
+    const startY = height / 2 - barHeight / 2;
+    
+    // Background bar
+    ctx.fillStyle = '#e5e7eb';
+    ctx.fillRect(startX, startY, barWidth, barHeight);
+    
+    // Success bar
+    ctx.fillStyle = '#22c55e';
+    ctx.fillRect(startX, startY, (barWidth * successRate) / 100, barHeight);
+    
+    // Text
+    ctx.fillStyle = '#1f2937';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Success Rate: ${successRate.toFixed(1)}%`, width / 2, startY - 10);
+    ctx.fillText(`${successes}/${total} attempts successful`, width / 2, startY + barHeight + 20);
+}
+
+function createSimplePrefixChart(attempts) {
+    const canvas = document.getElementById('prefixDifficultyChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Group by prefix length
+    const lengthStats = {};
+    attempts.forEach(a => {
+        const len = (a.targetPrefix || '0x0').replace('0x', '').length;
+        if (!lengthStats[len]) lengthStats[len] = { total: 0, success: 0 };
+        lengthStats[len].total++;
+        if (a.success) lengthStats[len].success++;
+    });
+    
+    const lengths = Object.keys(lengthStats).sort((a, b) => a - b);
+    if (lengths.length === 0) {
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data available yet', canvas.width / 2, canvas.height / 2);
+        return;
+    }
+    
+    // Simple bar chart
+    const barWidth = Math.min(50, canvas.width / lengths.length - 10);
+    const maxHeight = canvas.height - 60;
+    const maxRate = Math.max(...lengths.map(len => (lengthStats[len].success / lengthStats[len].total) * 100));
+    
+    lengths.forEach((len, i) => {
+        const stats = lengthStats[len];
+        const rate = (stats.success / stats.total) * 100;
+        const barHeight = maxRate > 0 ? (rate / maxRate) * maxHeight : 0;
+        const x = (canvas.width / lengths.length) * i + (canvas.width / lengths.length - barWidth) / 2;
+        const y = canvas.height - 40 - barHeight;
+        
+        ctx.fillStyle = '#667eea';
+        ctx.fillRect(x, y, barWidth, barHeight);
+        
+        ctx.fillStyle = '#1f2937';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${len}`, x + barWidth / 2, canvas.height - 10);
+        ctx.fillText(`${rate.toFixed(0)}%`, x + barWidth / 2, y - 5);
+    });
+}
+
+function createSimpleAlgorithmChart(attempts) {
+    const canvas = document.getElementById('algorithmComparisonChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    const algorithmStats = { sha256: 0, sha512: 0 };
+    attempts.forEach(a => {
+        if (a.hashAlgorithm) algorithmStats[a.hashAlgorithm]++;
+    });
+    
+    const total = algorithmStats.sha256 + algorithmStats.sha512;
+    if (total === 0) {
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data available yet', canvas.width / 2, canvas.height / 2);
+        return;
+    }
+    
+    // Simple pie chart
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const radius = Math.min(centerX, centerY) - 20;
+    
+    let startAngle = 0;
+    const colors = ['#667eea', '#764ba2'];
+    const algorithms = ['sha256', 'sha512'];
+    
+    algorithms.forEach((algo, i) => {
+        const count = algorithmStats[algo];
+        if (count === 0) return;
+        
+        const sliceAngle = (count / total) * 2 * Math.PI;
+        
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+        ctx.closePath();
+        ctx.fillStyle = colors[i];
+        ctx.fill();
+        
+        // Label
+        const labelAngle = startAngle + sliceAngle / 2;
+        const labelX = centerX + Math.cos(labelAngle) * (radius / 2);
+        const labelY = centerY + Math.sin(labelAngle) * (radius / 2);
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(algo.toUpperCase(), labelX, labelY);
+        ctx.fillText(`${count}`, labelX, labelY + 15);
+        
+        startAngle += sliceAngle;
+    });
+}
+
+function createSimplePerformanceChart(attempts) {
+    const canvas = document.getElementById('performanceChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (attempts.length === 0) {
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data available yet', canvas.width / 2, canvas.height / 2);
+        return;
+    }
+    
+    // Show recent attempts as a line chart
+    const recentAttempts = attempts.slice(-20); // Last 20 attempts
+    const maxAttempts = Math.max(...recentAttempts.map(a => a.attempts || 1));
+    const width = canvas.width - 40;
+    const height = canvas.height - 40;
+    
+    ctx.strokeStyle = '#667eea';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    recentAttempts.forEach((attempt, i) => {
+        const x = 20 + (width / Math.max(recentAttempts.length - 1, 1)) * i;
+        const y = 20 + height - ((attempt.attempts || 1) / maxAttempts) * height;
+        
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+        
+        // Point
+        ctx.fillStyle = attempt.success ? '#22c55e' : '#ef4444';
+        ctx.fillRect(x - 2, y - 2, 4, 4);
+    });
+    
+    ctx.stroke();
+    
+    // Labels
+    ctx.fillStyle = '#1f2937';
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Recent Attempts Performance', canvas.width / 2, 15);
+}
+
+// Make functions globally available
+window.toggleAnalytics = toggleAnalytics;
+window.clearAnalytics = clearAnalytics;
+window.exportAnalytics = exportAnalytics;
+window.generatePrediction = generatePrediction;
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
-    new UI();
+    const ui = new UI();
+    
+    // Override the original spoofImage to include analytics recording
+    const originalSpoofImage = ui.spoofer.spoofImage.bind(ui.spoofer);
+    ui.spoofer.spoofImage = async function(targetHex, imageFile, hashAlgorithm = 'sha512', onProgress = null) {
+        const startTime = Date.now();
+        try {
+            const result = await originalSpoofImage(targetHex, imageFile, hashAlgorithm, onProgress);
+            
+            // Record successful attempt
+            if (performanceAnalytics) {
+                performanceAnalytics.recordAttempt({
+                    targetPrefix: targetHex,
+                    attempts: result.attempts,
+                    duration: Date.now() - startTime,
+                    success: true,
+                    hashAlgorithm: hashAlgorithm,
+                    imageFormat: imageFile.type,
+                    fileSize: imageFile.size
+                });
+            }
+            
+            return result;
+        } catch (error) {
+            // Record failed attempt
+            if (performanceAnalytics) {
+                performanceAnalytics.recordAttempt({
+                    targetPrefix: targetHex,
+                    attempts: 0,
+                    duration: Date.now() - startTime,
+                    success: false,
+                    hashAlgorithm: hashAlgorithm,
+                    imageFormat: imageFile.type,
+                    fileSize: imageFile.size
+                });
+            }
+            
+            throw error;
+        }
+    };
     
     // Prevent default scroll behavior on certain elements
     document.addEventListener('wheel', (e) => {
