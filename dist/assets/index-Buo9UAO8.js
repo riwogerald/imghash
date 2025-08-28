@@ -1,15 +1,4 @@
-class WebImageHashSpoofer {
-    constructor() {
-        this.PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-        this.JPEG_SIGNATURE = new Uint8Array([0xFF, 0xD8]);
-        this.worker = null;
-        this.workerPool = [];
-        this.poolSize = Math.min(navigator.hardwareConcurrency || 4, 4);
-    }
-
-    async init() {
-        // Create a Web Worker for hash computation
-        const workerCode = `
+(function(){const s=document.createElement("link").relList;if(s&&s.supports&&s.supports("modulepreload"))return;for(const t of document.querySelectorAll('link[rel="modulepreload"]'))n(t);new MutationObserver(t=>{for(const e of t)if(e.type==="childList")for(const r of e.addedNodes)r.tagName==="LINK"&&r.rel==="modulepreload"&&n(r)}).observe(document,{childList:!0,subtree:!0});function a(t){const e={};return t.integrity&&(e.integrity=t.integrity),t.referrerPolicy&&(e.referrerPolicy=t.referrerPolicy),t.crossOrigin==="use-credentials"?e.credentials="include":t.crossOrigin==="anonymous"?e.credentials="omit":e.credentials="same-origin",e}function n(t){if(t.ep)return;t.ep=!0;const e=a(t);fetch(t.href,e)}})();class E{constructor(){this.PNG_SIGNATURE=new Uint8Array([137,80,78,71,13,10,26,10]),this.JPEG_SIGNATURE=new Uint8Array([255,216]),this.worker=null,this.workerPool=[],this.poolSize=Math.min(navigator.hardwareConcurrency||4,4)}async init(){const s=`
             class OptimizedHashWorker {
                 constructor() {
                     this.PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
@@ -181,7 +170,7 @@ class WebImageHashSpoofer {
                         let testContent;
                         
                         if (isPNG) {
-                            const testData = new TextEncoder().encode(`Hash attempt ${i} - ${Date.now()}`);
+                            const testData = new TextEncoder().encode('Hash attempt ' + i + ' - ' + Date.now());
                             const commentChunk = this.createPNGChunk(new Uint8Array([116, 69, 88, 116]), testData); // tEXt
                             const iendChunk = this.createPNGChunk(new Uint8Array([73, 69, 78, 68]), new Uint8Array(0)); // IEND
                             
@@ -204,7 +193,7 @@ class WebImageHashSpoofer {
                             
                             testContent.set(iendChunk, pos);
                         } else {
-                            const comment = `Hash attempt ${i} - ${Date.now()}`;
+                            const comment = 'Hash attempt ' + i + ' - ' + Date.now();
                             testContent = this.addJPEGComment(originalData, comment);
                         }
 
@@ -221,7 +210,7 @@ class WebImageHashSpoofer {
                         }
                     }
 
-                    self.postMessage({ type: 'error', message: `Could not find matching hash after ${maxAttempts} attempts` });
+                    self.postMessage({ type: 'error', message: 'Could not find matching hash after ' + maxAttempts + ' attempts' });
                 }
             }
 
@@ -232,258 +221,25 @@ class WebImageHashSpoofer {
                 const dataArray = new Uint8Array(originalData);
                 await worker.findMatchingHash(targetHex, dataArray, isPNG, hashAlgorithm, maxAttempts);
             };
-        `;
-
-        const blob = new Blob([workerCode], { type: 'application/javascript' });
-        this.worker = new Worker(URL.createObjectURL(blob));
-    }
-
-    async spoofImage(targetHex, imageFile, hashAlgorithm = 'sha512', onProgress = null) {
-        if (!this.worker) {
-            await this.init();
-        }
-
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            
-            reader.onload = (e) => {
-                const content = new Uint8Array(e.target.result);
-                const isPNG = this.arraysEqual(content.slice(0, 8), this.PNG_SIGNATURE);
-                const isJPEG = this.arraysEqual(content.slice(0, 2), this.JPEG_SIGNATURE);
-
-                if (!isPNG && !isJPEG) {
-                    reject(new Error('Unsupported image format. Only PNG and JPEG are supported.'));
-                    return;
-                }
-
-                this.worker.onmessage = (e) => {
-                    const { type, content: resultContent, hash, attempts, attempt, maxAttempts, message } = e.data;
-                    
-                    if (type === 'progress' && onProgress) {
-                        onProgress(attempt, maxAttempts);
-                    } else if (type === 'success') {
-                        const resultArray = new Uint8Array(resultContent);
-                        const blob = new Blob([resultArray], { type: isPNG ? 'image/png' : 'image/jpeg' });
-                        resolve({ blob, hash, attempts });
-                    } else if (type === 'error') {
-                        reject(new Error(message));
-                    }
-                };
-
-                this.worker.postMessage({
-                    targetHex,
-                    originalData: Array.from(content),
-                    isPNG,
-                    hashAlgorithm,
-                    maxAttempts: 1000000
-                });
-            };
-
-            reader.readAsArrayBuffer(imageFile);
-        });
-    }
-
-    arraysEqual(a, b) {
-        if (a.length !== b.length) return false;
-        for (let i = 0; i < a.length; i++) {
-            if (a[i] !== b[i]) return false;
-        }
-        return true;
-    }
-}
-
-// UI Management
-class UI {
-    constructor() {
-        this.spoofer = new WebImageHashSpoofer();
-        this.initializeEventListeners();
-    }
-
-    initializeEventListeners() {
-        const form = document.getElementById('spoofForm');
-        const fileInput = document.getElementById('imageFile');
-        const fileDisplay = document.getElementById('fileDisplay');
-        const fileInputWrapper = document.querySelector('.file-input-wrapper');
-
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                // Validate file type
-                const validTypes = ['image/png', 'image/jpeg', 'image/jpg'];
-                if (!validTypes.includes(file.type)) {
-                    this.showResult('Please select a valid PNG or JPEG image file', 'error');
-                    fileInput.value = '';
-                    return;
-                }
-                
-                // Validate file size (max 50MB)
-                if (file.size > 50 * 1024 * 1024) {
-                    this.showResult('File size too large. Please select a file smaller than 50MB', 'error');
-                    fileInput.value = '';
-                    return;
-                }
-                
-                fileDisplay.classList.add('has-file');
-                fileDisplay.innerHTML = `
+        `,a=new Blob([s],{type:"application/javascript"});this.worker=new Worker(URL.createObjectURL(a))}async spoofImage(s,a,n="sha512",t=null){return this.worker||await this.init(),new Promise((e,r)=>{const o=new FileReader;o.onload=i=>{const l=new Uint8Array(i.target.result),c=this.arraysEqual(l.slice(0,8),this.PNG_SIGNATURE),g=this.arraysEqual(l.slice(0,2),this.JPEG_SIGNATURE);if(!c&&!g){r(new Error("Unsupported image format. Only PNG and JPEG are supported."));return}this.worker.onmessage=d=>{const{type:h,content:m,hash:p,attempts:f,attempt:y,maxAttempts:w,message:x}=d.data;if(h==="progress"&&t)t(y,w);else if(h==="success"){const k=new Uint8Array(m),A=new Blob([k],{type:c?"image/png":"image/jpeg"});e({blob:A,hash:p,attempts:f})}else h==="error"&&r(new Error(x))},this.worker.postMessage({targetHex:s,originalData:Array.from(l),isPNG:c,hashAlgorithm:n,maxAttempts:1e6})},o.readAsArrayBuffer(a)})}arraysEqual(s,a){if(s.length!==a.length)return!1;for(let n=0;n<s.length;n++)if(s[n]!==a[n])return!1;return!0}}class b{constructor(){this.spoofer=new E,this.initializeEventListeners()}initializeEventListeners(){const s=document.getElementById("spoofForm"),a=document.getElementById("imageFile"),n=document.getElementById("fileDisplay"),t=document.querySelector(".file-input-wrapper");a.addEventListener("change",e=>{const r=e.target.files[0];if(r){if(!["image/png","image/jpeg","image/jpg"].includes(r.type)){this.showResult("Please select a valid PNG or JPEG image file","error"),a.value="";return}if(r.size>50*1024*1024){this.showResult("File size too large. Please select a file smaller than 50MB","error"),a.value="";return}n.classList.add("has-file"),n.innerHTML=`
                     <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
-                    <span>${file.name}</span>
+                    <span>${r.name}</span>
                     <button type="button" class="remove-file" onclick="this.parentElement.parentElement.querySelector('input').value=''; this.parentElement.classList.remove('has-file'); this.parentElement.innerHTML='<svg class=\\"upload-icon\\" fill=\\"none\\" stroke=\\"currentColor\\" viewBox=\\"0 0 24 24\\"><path stroke-linecap=\\"round\\" stroke-linejoin=\\"round\\" stroke-width=\\"2\\" d=\\"M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12\\"></path></svg><span>Click to select an image file</span>';">×</button>
-                `;
-            } else {
-                fileDisplay.classList.remove('has-file');
-                fileDisplay.innerHTML = `
+                `}else n.classList.remove("has-file"),n.innerHTML=`
                     <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                     </svg>
                     <span>Click to select an image file</span>
-                `;
-            }
-        });
-
-        // Handle click on file display to trigger file input
-        fileDisplay.addEventListener('click', () => {
-            fileInput.click();
-        });
-
-        // Handle drag and drop
-        fileInputWrapper.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            fileDisplay.classList.add('drag-over');
-        });
-
-        fileInputWrapper.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            fileDisplay.classList.remove('drag-over');
-        });
-
-        fileInputWrapper.addEventListener('drop', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            fileDisplay.classList.remove('drag-over');
-            
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                fileInput.files = files;
-                // Trigger change event
-                const event = new Event('change', { bubbles: true });
-                fileInput.dispatchEvent(event);
-            }
-        });
-
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleSpoof();
-        });
-    }
-
-    async handleSpoof() {
-        const targetHash = document.getElementById('targetHash').value.trim();
-        const hashAlgorithm = document.getElementById('hashAlgorithm').value;
-        const imageFile = document.getElementById('imageFile').files[0];
-        const button = document.getElementById('spoofButton');
-        const progress = document.getElementById('progress');
-        const result = document.getElementById('result');
-
-        if (!targetHash || !imageFile) {
-            this.showResult('Please fill in all fields', 'error');
-            // Scroll to result smoothly
-            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            return;
-        }
-
-        if (!targetHash.startsWith('0x')) {
-            this.showResult('Target hash must start with "0x"', 'error');
-            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            return;
-        }
-
-        // Additional validation for target hash
-        const hexPattern = /^0x[0-9a-fA-F]+$/;
-        if (!hexPattern.test(targetHash)) {
-            this.showResult('Target hash must be a valid hexadecimal string (e.g., 0x24, 0xabc123)', 'error');
-            result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            return;
-        }
-
-        button.disabled = true;
-        button.textContent = 'Processing...';
-        progress.classList.add('show');
-        result.classList.remove('show');
-
-        try {
-            const { blob, hash, attempts } = await this.spoofer.spoofImage(
-                targetHash,
-                imageFile,
-                hashAlgorithm,
-                (attempt, maxAttempts) => {
-                    const percentage = (attempt / maxAttempts) * 100;
-                    document.getElementById('progressFill').style.width = `${percentage}%`;
-                    document.getElementById('progressText').textContent = 
-                        `Attempt ${attempt.toLocaleString()} of ${maxAttempts.toLocaleString()}...`;
-                }
-            );
-
-            const downloadUrl = URL.createObjectURL(blob);
-            const originalExt = imageFile.name.split('.').pop();
-            const filename = `spoofed_${targetHash.replace('0x', '')}.${originalExt}`;
-
-            this.showResult(`
+                `}),n.addEventListener("click",()=>{a.click()}),t.addEventListener("dragover",e=>{e.preventDefault(),e.stopPropagation(),n.classList.add("drag-over")}),t.addEventListener("dragleave",e=>{e.preventDefault(),e.stopPropagation(),n.classList.remove("drag-over")}),t.addEventListener("drop",e=>{e.preventDefault(),e.stopPropagation(),n.classList.remove("drag-over");const r=e.dataTransfer.files;if(r.length>0){a.files=r;const o=new Event("change",{bubbles:!0});a.dispatchEvent(o)}}),s.addEventListener("submit",e=>{e.preventDefault(),this.handleSpoof()})}async handleSpoof(){const s=document.getElementById("targetHash").value.trim(),a=document.getElementById("hashAlgorithm").value,n=document.getElementById("imageFile").files[0],t=document.getElementById("spoofButton"),e=document.getElementById("progress"),r=document.getElementById("result");if(!s||!n){this.showResult("Please fill in all fields","error"),r.scrollIntoView({behavior:"smooth",block:"nearest"});return}if(!s.startsWith("0x")){this.showResult('Target hash must start with "0x"',"error"),r.scrollIntoView({behavior:"smooth",block:"nearest"});return}if(!/^0x[0-9a-fA-F]+$/.test(s)){this.showResult("Target hash must be a valid hexadecimal string (e.g., 0x24, 0xabc123)","error"),r.scrollIntoView({behavior:"smooth",block:"nearest"});return}t.disabled=!0,t.textContent="Processing...",e.classList.add("show"),r.classList.remove("show");try{const{blob:i,hash:l,attempts:c}=await this.spoofer.spoofImage(s,n,a,(m,p)=>{const f=m/p*100;document.getElementById("progressFill").style.width=`${f}%`,document.getElementById("progressText").textContent=`Attempt ${m.toLocaleString()} of ${p.toLocaleString()}...`}),g=URL.createObjectURL(i),d=n.name.split(".").pop(),h=`spoofed_${s.replace("0x","")}.${d}`;this.showResult(`
                 <h3>✅ Success!</h3>
-                <p>Found matching hash after <strong>${attempts.toLocaleString()}</strong> attempts.</p>
+                <p>Found matching hash after <strong>${c.toLocaleString()}</strong> attempts.</p>
                 <div class="hash-display">
                     <strong>Final Hash:</strong><br>
-                    ${hash}
+                    ${l}
                 </div>
-                <a href="${downloadUrl}" download="${filename}" class="download-link">
+                <a href="${g}" download="${h}" class="download-link">
                     📥 Download Spoofed Image
                 </a>
-            `, 'success');
-
-            // Scroll to result smoothly after success
-            setTimeout(() => {
-                result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }, 100);
-        } catch (error) {
-            this.showResult(`❌ Error: ${error.message}`, 'error');
-            // Scroll to result smoothly after error
-            setTimeout(() => {
-                result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }, 100);
-        } finally {
-            button.disabled = false;
-            button.textContent = 'Start Hash Spoofing';
-            progress.classList.remove('show');
-        }
-    }
-
-    showResult(content, type) {
-        const result = document.getElementById('result');
-        const resultContent = document.getElementById('resultContent');
-        
-        result.className = `result ${type} show`;
-        resultContent.innerHTML = content;
-    }
-}
-
-// Initialize the application
-document.addEventListener('DOMContentLoaded', () => {
-    new UI();
-    
-    // Prevent default scroll behavior on certain elements
-    document.addEventListener('wheel', (e) => {
-        // Allow normal scrolling on the container
-        const container = document.querySelector('.container');
-        if (container && container.contains(e.target)) {
-            return;
-        }
-    }, { passive: true });
-    
-    // Prevent scroll restoration on page reload
-    if ('scrollRestoration' in history) {
-        history.scrollRestoration = 'manual';
-    }
-});
+            `,"success"),setTimeout(()=>{r.scrollIntoView({behavior:"smooth",block:"nearest"})},100)}catch(i){this.showResult(`❌ Error: ${i.message}`,"error"),setTimeout(()=>{r.scrollIntoView({behavior:"smooth",block:"nearest"})},100)}finally{t.disabled=!1,t.textContent="Start Hash Spoofing",e.classList.remove("show")}}showResult(s,a){const n=document.getElementById("result"),t=document.getElementById("resultContent");n.className=`result ${a} show`,t.innerHTML=s}}document.addEventListener("DOMContentLoaded",()=>{new b,document.addEventListener("wheel",u=>{const s=document.querySelector(".container");s&&s.contains(u.target)},{passive:!0}),"scrollRestoration"in history&&(history.scrollRestoration="manual")});
