@@ -5,6 +5,7 @@ import { Worker, isMainThread, parentPort, workerData } from 'node:worker_thread
 import { cpus } from 'node:os';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { HashingTimer, OperationTimer } from './timer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -145,22 +146,55 @@ class OptimizedImageHashSpoofer {
     return Math.min(Math.max(optimal, 100000), 50000000);
   }
 
-  // Worker function for parallel processing
+  // Enhanced worker function with timing support
   static workerFunction({ targetHex, chunks, isPNG, hashAlgorithm, maxAttempts, workerId, numWorkers, originalData }) {
     const spoofer = new OptimizedImageHashSpoofer();
     const targetPrefix = targetHex.startsWith('0x') ? targetHex.slice(2).toLowerCase() : targetHex.toLowerCase();
+    const operationTimer = new OperationTimer();
+    const workerStartTime = performance.now();
     
     // Each worker handles a subset of attempts
     const startIndex = workerId;
     const step = numWorkers;
     
+    let lastProgressTime = workerStartTime;
+    const timingBreakdown = {
+      imageModification: 0,
+      hashCalculation: 0,
+      comparison: 0
+    };
+    
     for (let i = startIndex; i < maxAttempts; i += step) {
-      // Reduce progress reporting frequency for better performance
-      if (i % 500000 === 0) {
-        parentPort.postMessage({ type: 'progress', attempt: i, workerId });
+      // Enhanced progress reporting with timing (every 100K attempts)
+      if (i % 100000 === 0) {
+        const now = performance.now();
+        const elapsed = (now - workerStartTime) / 1000;
+        const rate = (i - startIndex) / elapsed;
+        const estimatedRemaining = ((maxAttempts - i) / step) / rate;
+        
+        parentPort.postMessage({ 
+          type: 'progress', 
+          attempt: i, 
+          workerId,
+          timing: {
+            elapsed,
+            rate: Math.round(rate),
+            estimatedRemaining,
+            breakdown: {
+              imageModification: timingBreakdown.imageModification / (i - startIndex + 1),
+              hashCalculation: timingBreakdown.hashCalculation / (i - startIndex + 1),
+              comparison: timingBreakdown.comparison / (i - startIndex + 1)
+            }
+          }
+        });
+        
+        lastProgressTime = now;
       }
 
       let testContent;
+      
+      // Time image modification
+      const modStart = performance.now();
       
       if (isPNG) {
         // Use high-entropy data for better randomness distribution
@@ -194,28 +228,64 @@ class OptimizedImageHashSpoofer {
         const comment = `${Date.now()}-${i}-${Math.random()}-${process.hrtime.bigint()}`;
         testContent = spoofer.addJPEGComment(originalData, comment);
       }
+      
+      timingBreakdown.imageModification += performance.now() - modStart;
 
-      // Use optimized hash calculation
+      // Time hash calculation
+      const hashStart = performance.now();
       const hash = createHash(hashAlgorithm, { highWaterMark: 1024 * 64 })
         .update(testContent)
         .digest('hex');
+      timingBreakdown.hashCalculation += performance.now() - hashStart;
       
-      if (hash.startsWith(targetPrefix)) {
+      // Time comparison
+      const compStart = performance.now();
+      const matches = hash.startsWith(targetPrefix);
+      timingBreakdown.comparison += performance.now() - compStart;
+      
+      if (matches) {
+        const workerEndTime = performance.now();
+        const totalWorkerTime = workerEndTime - workerStartTime;
+        
         parentPort.postMessage({ 
           type: 'success', 
           content: testContent,
           hash: hash,
           attempts: i + 1,
-          workerId
+          workerId,
+          timing: {
+            totalDuration: totalWorkerTime / 1000,
+            averageRate: (i + 1) / (totalWorkerTime / 1000),
+            timePerAttempt: totalWorkerTime / (i + 1),
+            breakdown: {
+              imageModification: timingBreakdown.imageModification / (i + 1),
+              hashCalculation: timingBreakdown.hashCalculation / (i + 1),
+              comparison: timingBreakdown.comparison / (i + 1)
+            }
+          }
         });
         return;
       }
     }
 
+    const workerEndTime = performance.now();
+    const totalWorkerTime = workerEndTime - workerStartTime;
+    const workerAttempts = Math.floor((maxAttempts - startIndex) / step);
+    
     parentPort.postMessage({ 
       type: 'complete', 
       workerId,
-      message: `Worker ${workerId} completed ${maxAttempts} attempts without finding match`
+      message: `Worker ${workerId} completed ${workerAttempts} attempts without finding match`,
+      timing: {
+        totalDuration: totalWorkerTime / 1000,
+        averageRate: workerAttempts / (totalWorkerTime / 1000),
+        attemptsCompleted: workerAttempts,
+        breakdown: {
+          imageModification: timingBreakdown.imageModification / workerAttempts,
+          hashCalculation: timingBreakdown.hashCalculation / workerAttempts,
+          comparison: timingBreakdown.comparison / workerAttempts
+        }
+      }
     });
   }
 

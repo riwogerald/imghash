@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { createHash } from 'node:crypto';
 import { performance } from 'perf_hooks';
+import { MicroBenchmark, OperationTimer } from './timer.js';
 
 // Mock image data for testing
 function createMockPNGImage(size = 1024) {
@@ -46,38 +47,75 @@ function createMockJPEGImage(size = 1024) {
     return Buffer.concat([JPEG_SIGNATURE, mockData, jpegEnd]);
 }
 
-// Performance test functions
+// Enhanced performance test functions with detailed timing
 async function testOriginalAlgorithm(data, targetPrefix, maxAttempts = 10000) {
     console.log(`Testing original algorithm with ${maxAttempts} attempts...`);
+    const operationTimer = new OperationTimer();
     const startTime = performance.now();
     
+    const timingBreakdown = {
+        dataPreparation: 0,
+        hashCalculation: 0,
+        comparison: 0
+    };
+    
     for (let i = 0; i < maxAttempts; i++) {
+        // Time data preparation
+        const prepStart = performance.now();
         const testData = Buffer.concat([data, Buffer.from(`attempt-${i}`)]);
-        const hash = createHash('sha256').update(testData).digest('hex');
+        timingBreakdown.dataPreparation += performance.now() - prepStart;
         
-        if (hash.startsWith(targetPrefix)) {
+        // Time hash calculation
+        const hashStart = performance.now();
+        const hash = createHash('sha256').update(testData).digest('hex');
+        timingBreakdown.hashCalculation += performance.now() - hashStart;
+        
+        // Time comparison
+        const compStart = performance.now();
+        const matches = hash.startsWith(targetPrefix);
+        timingBreakdown.comparison += performance.now() - compStart;
+        
+        if (matches) {
             const endTime = performance.now();
+            const totalTime = endTime - startTime;
             return {
                 found: true,
                 attempts: i + 1,
-                time: endTime - startTime,
-                rate: i / ((endTime - startTime) / 1000)
+                time: totalTime,
+                rate: (i + 1) / (totalTime / 1000),
+                timingBreakdown,
+                averageOperationTimes: {
+                    dataPreparation: timingBreakdown.dataPreparation / (i + 1),
+                    hashCalculation: timingBreakdown.hashCalculation / (i + 1),
+                    comparison: timingBreakdown.comparison / (i + 1)
+                }
             };
         }
     }
     
     const endTime = performance.now();
+    const totalTime = endTime - startTime;
     return {
         found: false,
         attempts: maxAttempts,
-        time: endTime - startTime,
-        rate: maxAttempts / ((endTime - startTime) / 1000)
+        time: totalTime,
+        rate: maxAttempts / (totalTime / 1000),
+        timingBreakdown,
+        averageOperationTimes: {
+            dataPreparation: timingBreakdown.dataPreparation / maxAttempts,
+            hashCalculation: timingBreakdown.hashCalculation / maxAttempts,
+            comparison: timingBreakdown.comparison / maxAttempts
+        }
     };
 }
 
 async function testOptimizedAlgorithm(data, targetPrefix, maxAttempts = 10000) {
     console.log(`Testing optimized algorithm with ${maxAttempts} attempts...`);
+    const operationTimer = new OperationTimer();
     const startTime = performance.now();
+    
+    // Time the optimization setup
+    operationTimer.startOperation('setup');
     
     // Pre-allocate hex lookup table (optimization)
     const hexLookup = [];
@@ -99,34 +137,82 @@ async function testOptimizedAlgorithm(data, targetPrefix, maxAttempts = 10000) {
     const buffer = Buffer.allocUnsafe(baseSize + maxCommentSize);
     data.copy(buffer, 0);
     
+    operationTimer.endOperation('setup');
+    
+    const timingBreakdown = {
+        dataPreparation: 0,
+        hashCalculation: 0,
+        hexConversion: 0,
+        comparison: 0
+    };
+    
     for (let i = 0; i < maxAttempts; i++) {
+        // Time data preparation
+        const prepStart = performance.now();
         const comment = `attempt-${i}`;
         const commentBuffer = Buffer.from(comment);
-        
-        // Efficient buffer manipulation
         commentBuffer.copy(buffer, baseSize);
         const testData = buffer.subarray(0, baseSize + commentBuffer.length);
+        timingBreakdown.dataPreparation += performance.now() - prepStart;
         
+        // Time hash calculation
+        const hashStart = performance.now();
         const hashBuffer = createHash('sha256').update(testData).digest();
-        const hash = optimizedHex(hashBuffer);
+        timingBreakdown.hashCalculation += performance.now() - hashStart;
         
-        if (hash.startsWith(targetPrefix)) {
+        // Time hex conversion
+        const hexStart = performance.now();
+        const hash = optimizedHex(hashBuffer);
+        timingBreakdown.hexConversion += performance.now() - hexStart;
+        
+        // Time comparison
+        const compStart = performance.now();
+        const matches = hash.startsWith(targetPrefix);
+        timingBreakdown.comparison += performance.now() - compStart;
+        
+        if (matches) {
             const endTime = performance.now();
+            const totalTime = endTime - startTime;
             return {
                 found: true,
                 attempts: i + 1,
-                time: endTime - startTime,
-                rate: i / ((endTime - startTime) / 1000)
+                time: totalTime,
+                rate: (i + 1) / (totalTime / 1000),
+                timingBreakdown,
+                averageOperationTimes: {
+                    dataPreparation: timingBreakdown.dataPreparation / (i + 1),
+                    hashCalculation: timingBreakdown.hashCalculation / (i + 1),
+                    hexConversion: timingBreakdown.hexConversion / (i + 1),
+                    comparison: timingBreakdown.comparison / (i + 1)
+                },
+                optimizations: {
+                    preAllocatedBuffer: true,
+                    hexLookupTable: true,
+                    setupTime: operationTimer.getOperationStats('setup').duration
+                }
             };
         }
     }
     
     const endTime = performance.now();
+    const totalTime = endTime - startTime;
     return {
         found: false,
         attempts: maxAttempts,
-        time: endTime - startTime,
-        rate: maxAttempts / ((endTime - startTime) / 1000)
+        time: totalTime,
+        rate: maxAttempts / (totalTime / 1000),
+        timingBreakdown,
+        averageOperationTimes: {
+            dataPreparation: timingBreakdown.dataPreparation / maxAttempts,
+            hashCalculation: timingBreakdown.hashCalculation / maxAttempts,
+            hexConversion: timingBreakdown.hexConversion / maxAttempts,
+            comparison: timingBreakdown.comparison / maxAttempts
+        },
+        optimizations: {
+            preAllocatedBuffer: true,
+            hexLookupTable: true,
+            setupTime: operationTimer.getOperationStats('setup').duration
+        }
     };
 }
 
@@ -141,9 +227,184 @@ function measureMemoryUsage() {
     };
 }
 
+// Micro-benchmark individual operations
+async function runMicroBenchmarks() {
+    console.log('🔬 Running Micro-Benchmarks\n');
+    const microBench = new MicroBenchmark();
+    const results = {};
+
+    // Test data preparation
+    const testData = Buffer.alloc(1024, 0x42);
+    
+    console.log('Testing individual operations...');
+    
+    // Benchmark Buffer.concat vs pre-allocated buffer
+    results.bufferConcat = await microBench.benchmark(
+        'buffer_concat',
+        () => {
+            const additional = Buffer.from('test-data-123');
+            return Buffer.concat([testData, additional]);
+        },
+        10000,
+        1000
+    );
+    
+    // Benchmark pre-allocated buffer approach
+    const preAllocBuffer = Buffer.allocUnsafe(testData.length + 50);
+    testData.copy(preAllocBuffer, 0);
+    
+    results.bufferPrealloc = await microBench.benchmark(
+        'buffer_prealloc',
+        () => {
+            const additional = Buffer.from('test-data-123');
+            additional.copy(preAllocBuffer, testData.length);
+            return preAllocBuffer.subarray(0, testData.length + additional.length);
+        },
+        10000,
+        1000
+    );
+    
+    // Benchmark SHA-256 hash calculation
+    results.sha256Hash = await microBench.benchmark(
+        'sha256_hash',
+        () => {
+            return createHash('sha256').update(testData).digest('hex');
+        },
+        5000,
+        500
+    );
+    
+    // Benchmark hex conversion methods
+    const hashBuffer = createHash('sha256').update(testData).digest();
+    
+    results.hexStandard = await microBench.benchmark(
+        'hex_standard',
+        () => {
+            return hashBuffer.toString('hex');
+        },
+        100000,
+        10000
+    );
+    
+    // Create lookup table for optimized hex
+    const hexLookup = [];
+    for (let i = 0; i < 256; i++) {
+        hexLookup[i] = i.toString(16).padStart(2, '0');
+    }
+    
+    results.hexOptimized = await microBench.benchmark(
+        'hex_optimized',
+        () => {
+            let result = '';
+            for (let i = 0; i < hashBuffer.length; i++) {
+                result += hexLookup[hashBuffer[i]];
+            }
+            return result;
+        },
+        100000,
+        10000
+    );
+    
+    // Benchmark string comparisons
+    const testHash = 'a1b2c3d4e5f6789';
+    const prefix = 'a1b';
+    
+    results.stringStartsWith = await microBench.benchmark(
+        'string_startswith',
+        () => {
+            return testHash.startsWith(prefix);
+        },
+        1000000,
+        100000
+    );
+    
+    results.stringSliceCompare = await microBench.benchmark(
+        'string_slice_compare',
+        () => {
+            return testHash.slice(0, prefix.length) === prefix;
+        },
+        1000000,
+        100000
+    );
+    
+    // Print micro-benchmark results
+    console.log('\n🔬 MICRO-BENCHMARK RESULTS');
+    console.log('='.repeat(50));
+    
+    Object.entries(results).forEach(([name, result]) => {
+        console.log(`\n${name}:`);
+        console.log(`  Operations/sec: ${result.throughput.operationsPerSecond.toFixed(0)}`);
+        console.log(`  Average time:   ${result.statistics.mean.toFixed(4)}ms`);
+        console.log(`  Min time:       ${result.statistics.min.toFixed(4)}ms`);
+        console.log(`  Max time:       ${result.statistics.max.toFixed(4)}ms`);
+        console.log(`  P95 time:       ${result.statistics.p95.toFixed(4)}ms`);
+    });
+    
+    // Performance comparisons
+    console.log('\n📊 OPERATION COMPARISONS');
+    console.log('='.repeat(50));
+    
+    const bufferSpeedup = results.bufferConcat.statistics.mean / results.bufferPrealloc.statistics.mean;
+    console.log(`Buffer pre-allocation is ${bufferSpeedup.toFixed(2)}x faster than Buffer.concat`);
+    
+    const hexSpeedup = results.hexStandard.statistics.mean / results.hexOptimized.statistics.mean;
+    console.log(`Optimized hex conversion is ${hexSpeedup.toFixed(2)}x faster than standard`);
+    
+    const stringSpeedup = results.stringSliceCompare.statistics.mean / results.stringStartsWith.statistics.mean;
+    console.log(`String.startsWith is ${stringSpeedup.toFixed(2)}x faster than slice comparison`);
+    
+    return results;
+}
+
+// Analyze timing breakdown
+function analyzeTimingBreakdown(originalResult, optimizedResult) {
+    console.log('\n⏱️  DETAILED TIMING ANALYSIS');
+    console.log('='.repeat(50));
+    
+    console.log('\nOriginal Algorithm Breakdown:');
+    Object.entries(originalResult.averageOperationTimes).forEach(([op, time]) => {
+        const percentage = (time / (originalResult.time / originalResult.attempts)) * 100;
+        console.log(`  ${op}: ${time.toFixed(4)}ms (${percentage.toFixed(1)}%)`);
+    });
+    
+    console.log('\nOptimized Algorithm Breakdown:');
+    Object.entries(optimizedResult.averageOperationTimes).forEach(([op, time]) => {
+        const percentage = (time / (optimizedResult.time / optimizedResult.attempts)) * 100;
+        console.log(`  ${op}: ${time.toFixed(4)}ms (${percentage.toFixed(1)}%)`);
+    });
+    
+    // Calculate improvement per operation
+    console.log('\nOperation-by-Operation Improvements:');
+    const commonOps = ['dataPreparation', 'hashCalculation', 'comparison'];
+    
+    commonOps.forEach(op => {
+        if (originalResult.averageOperationTimes[op] && optimizedResult.averageOperationTimes[op]) {
+            const improvement = originalResult.averageOperationTimes[op] / optimizedResult.averageOperationTimes[op];
+            console.log(`  ${op}: ${improvement.toFixed(2)}x faster`);
+        }
+    });
+    
+    if (optimizedResult.optimizations) {
+        console.log('\nOptimizations Applied:');
+        Object.entries(optimizedResult.optimizations).forEach(([opt, value]) => {
+            if (typeof value === 'boolean' && value) {
+                console.log(`  ✅ ${opt}`);
+            } else if (typeof value === 'number') {
+                console.log(`  ⏱️  ${opt}: ${value.toFixed(4)}ms`);
+            }
+        });
+    }
+}
+
 // Run performance comparison
 async function runPerformanceComparison() {
-    console.log('🚀 Starting Performance Comparison\n');
+    console.log('🚀 Starting Enhanced Performance Comparison\n');
+    console.log('='.repeat(60));
+    
+    // First run micro-benchmarks
+    const microResults = await runMicroBenchmarks();
+    
+    console.log('\n\n🏃 Starting Full Algorithm Tests\n');
     console.log('='.repeat(60));
     
     const testCases = [
@@ -188,6 +449,11 @@ async function runPerformanceComparison() {
         console.log(`✅ Original:  ${originalResult.time.toFixed(2)}ms, ${originalResult.rate.toFixed(0)} attempts/sec`);
         console.log(`🚀 Optimized: ${optimizedResult.time.toFixed(2)}ms, ${optimizedResult.rate.toFixed(0)} attempts/sec`);
         console.log(`📈 Speedup:   ${comparison.speedup}x`);
+        
+        // Add detailed timing analysis for the first test case
+        if (results.length === 1) {
+            analyzeTimingBreakdown(originalResult, optimizedResult);
+        }
     }
     
     // Summary report
@@ -208,6 +474,30 @@ async function runPerformanceComparison() {
     
     const avgSpeedup = results.reduce((acc, r) => acc + parseFloat(r.speedup), 0) / results.length;
     console.log(`\n🎯 Average Performance Improvement: ${avgSpeedup.toFixed(2)}x`);
+    
+    // Statistical analysis of results
+    console.log('\n📈 STATISTICAL ANALYSIS');
+    console.log('='.repeat(60));
+    
+    const speedups = results.map(r => parseFloat(r.speedup)).filter(s => !isNaN(s));
+    const minSpeedup = Math.min(...speedups);
+    const maxSpeedup = Math.max(...speedups);
+    const medianSpeedup = speedups.sort((a, b) => a - b)[Math.floor(speedups.length / 2)];
+    
+    console.log(`Minimum Speedup: ${minSpeedup.toFixed(2)}x`);
+    console.log(`Maximum Speedup: ${maxSpeedup.toFixed(2)}x`);
+    console.log(`Median Speedup:  ${medianSpeedup.toFixed(2)}x`);
+    console.log(`Average Speedup: ${avgSpeedup.toFixed(2)}x`);
+    
+    // Memory efficiency analysis
+    const memoryImprovements = results.map(r => {
+        const originalMem = r.memoryOriginal.heapUsed;
+        const optimizedMem = r.memoryOptimized.heapUsed;
+        return ((originalMem - optimizedMem) / originalMem) * 100;
+    });
+    
+    const avgMemoryImprovement = memoryImprovements.reduce((a, b) => a + b) / memoryImprovements.length;
+    console.log(`\nMemory Usage Improvement: ${avgMemoryImprovement.toFixed(1)}% on average`);
     
     // Additional optimization suggestions
     console.log('\n' + '='.repeat(60));

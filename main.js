@@ -1,3 +1,6 @@
+// Import timer functionality
+import { HashPerformanceAnalyzer, OperationTimer } from './timer.js';
+
 class WebImageHashSpoofer {
     constructor() {
         this.PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
@@ -5,6 +8,8 @@ class WebImageHashSpoofer {
         this.worker = null;
         this.workerPool = [];
         this.poolSize = Math.min(navigator.hardwareConcurrency || 4, 4);
+        this.performanceAnalyzer = new HashPerformanceAnalyzer();
+        this.operationTimer = new OperationTimer();
     }
 
     async init() {
@@ -159,13 +164,33 @@ class WebImageHashSpoofer {
                     return Math.min(Math.max(expectedAttempts * 3, 100000), 10000000);
                 }
 
+                // Enhanced progress reporting with timing
+                reportProgressWithTiming(attempt, maxAttempts, startTime) {
+                    const elapsed = (performance.now() - startTime) / 1000;
+                    const rate = attempt / elapsed;
+                    const remaining = (maxAttempts - attempt) / rate;
+                    const eta = new Date(Date.now() + remaining * 1000);
+                    
+                    return {
+                        attempt,
+                        maxAttempts,
+                        elapsed,
+                        rate: Math.round(rate),
+                        estimatedRemaining: remaining,
+                        eta: eta.toLocaleTimeString(),
+                        percentage: (attempt / maxAttempts) * 100
+                    };
+                }
+
                 async findMatchingHash(targetHex, originalData, isPNG, hashAlgorithm, maxAttempts = 1000000) {
                     const targetPrefix = targetHex.startsWith('0x') ? targetHex.slice(2).toLowerCase() : targetHex.toLowerCase();
                     const optimalMaxAttempts = this.calculateOptimalMaxAttempts(targetPrefix);
                     const actualMaxAttempts = Math.min(maxAttempts, optimalMaxAttempts);
                     
-                    // Reduce progress update frequency for better performance (every 50K attempts)
-                    const progressInterval = Math.max(50000, Math.floor(actualMaxAttempts / 100));
+                    // Enhanced timing with adaptive progress updates
+                    const startTime = performance.now();
+                    const progressInterval = Math.max(10000, Math.floor(actualMaxAttempts / 200)); // More frequent updates
+                    let lastProgressTime = startTime;
                     
                     // Pre-parse chunks for PNG to avoid repeated parsing
                     let chunks;
@@ -174,8 +199,23 @@ class WebImageHashSpoofer {
                     }
                     
                     for (let i = 0; i < actualMaxAttempts; i++) {
+                        // Enhanced progress reporting with timing data
                         if (i % progressInterval === 0) {
-                            self.postMessage({ type: 'progress', attempt: i, maxAttempts: actualMaxAttempts });
+                            const now = performance.now();
+                            const timingData = this.reportProgressWithTiming(i, actualMaxAttempts, startTime);
+                            
+                            self.postMessage({ 
+                                type: 'progress', 
+                                attempt: i, 
+                                maxAttempts: actualMaxAttempts,
+                                timing: timingData,
+                                memoryUsage: performance.memory ? {
+                                    used: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024 * 100) / 100,
+                                    total: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024 * 100) / 100
+                                } : null
+                            });
+                            
+                            lastProgressTime = now;
                         }
 
                         let testContent;
@@ -211,11 +251,20 @@ class WebImageHashSpoofer {
                         const hash = await (hashAlgorithm === 'sha512' ? this.sha512(testContent) : this.sha256(testContent));
                         
                         if (hash.startsWith(targetPrefix)) {
+                            const finalTime = performance.now();
+                            const totalDuration = finalTime - startTime;
+                            const finalRate = (i + 1) / (totalDuration / 1000);
+                            
                             self.postMessage({ 
                                 type: 'success', 
                                 content: Array.from(testContent),
                                 hash: hash,
-                                attempts: i + 1
+                                attempts: i + 1,
+                                timing: {
+                                    totalDuration: totalDuration / 1000, // seconds
+                                    averageRate: finalRate,
+                                    timePerAttempt: totalDuration / (i + 1)
+                                }
                             });
                             return;
                         }
@@ -257,14 +306,14 @@ class WebImageHashSpoofer {
                 }
 
                 this.worker.onmessage = (e) => {
-                    const { type, content: resultContent, hash, attempts, attempt, maxAttempts, message } = e.data;
+                    const { type, content: resultContent, hash, attempts, attempt, maxAttempts, message, timing, memoryUsage } = e.data;
                     
                     if (type === 'progress' && onProgress) {
-                        onProgress(attempt, maxAttempts);
+                        onProgress(attempt, maxAttempts, timing, memoryUsage);
                     } else if (type === 'success') {
                         const resultArray = new Uint8Array(resultContent);
                         const blob = new Blob([resultArray], { type: isPNG ? 'image/png' : 'image/jpeg' });
-                        resolve({ blob, hash, attempts });
+                        resolve({ blob, hash, attempts, timing });
                     } else if (type === 'error') {
                         reject(new Error(message));
                     }
@@ -415,15 +464,34 @@ class UI {
         result.classList.remove('show');
 
         try {
-            const { blob, hash, attempts } = await this.spoofer.spoofImage(
+            const { blob, hash, attempts, timing } = await this.spoofer.spoofImage(
                 targetHash,
                 imageFile,
                 hashAlgorithm,
-                (attempt, maxAttempts) => {
+                (attempt, maxAttempts, timingData, memoryUsage) => {
                     const percentage = (attempt / maxAttempts) * 100;
                     document.getElementById('progressFill').style.width = `${percentage}%`;
-                    document.getElementById('progressText').textContent = 
-                        `Attempt ${attempt.toLocaleString()} of ${maxAttempts.toLocaleString()}...`;
+                    
+                    // Enhanced progress text with timing information
+                    let progressText = `Attempt ${attempt.toLocaleString()} of ${maxAttempts.toLocaleString()}`;
+                    
+                    if (timingData) {
+                        progressText += ` (${timingData.rate.toLocaleString()} attempts/sec)`;
+                        if (timingData.estimatedRemaining > 0) {
+                            const remainingMinutes = Math.round(timingData.estimatedRemaining / 60);
+                            const remainingSeconds = Math.round(timingData.estimatedRemaining % 60);
+                            if (remainingMinutes > 0) {
+                                progressText += ` - ETA: ${remainingMinutes}m ${remainingSeconds}s`;
+                            } else {
+                                progressText += ` - ETA: ${remainingSeconds}s`;
+                            }
+                        }
+                        if (memoryUsage) {
+                            progressText += ` - Memory: ${memoryUsage.used}MB`;
+                        }
+                    }
+                    
+                    document.getElementById('progressText').textContent = progressText;
                 }
             );
 
@@ -431,9 +499,22 @@ class UI {
             const originalExt = imageFile.name.split('.').pop();
             const filename = `spoofed_${targetHash.replace('0x', '')}.${originalExt}`;
 
-            this.showResult(`
+            // Enhanced success message with timing information
+            let successMessage = `
                 <h3>✅ Success!</h3>
-                <p>Found matching hash after <strong>${attempts.toLocaleString()}</strong> attempts.</p>
+                <p>Found matching hash after <strong>${attempts.toLocaleString()}</strong> attempts.</p>`;
+            
+            if (timing) {
+                successMessage += `
+                <div class="performance-stats">
+                    <strong>Performance Stats:</strong><br>
+                    Total Time: ${timing.totalDuration.toFixed(2)}s<br>
+                    Average Rate: ${Math.round(timing.averageRate).toLocaleString()} attempts/sec<br>
+                    Time per Attempt: ${timing.timePerAttempt.toFixed(3)}ms
+                </div>`;
+            }
+            
+            successMessage += `
                 <div class="hash-display">
                     <strong>Final Hash:</strong><br>
                     ${hash}
@@ -441,7 +522,9 @@ class UI {
                 <a href="${downloadUrl}" download="${filename}" class="download-link">
                     📥 Download Spoofed Image
                 </a>
-            `, 'success');
+            `;
+            
+            this.showResult(successMessage, 'success');
 
             // Scroll to result smoothly after success
             setTimeout(() => {

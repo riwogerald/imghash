@@ -1,6 +1,9 @@
+// Import timer functionality
+import { HashingTimer, OperationTimer, MicroBenchmark } from './timer.js';
+
 /**
- * Performance Analytics Module
- * Tracks performance metrics, success rates, and provides predictive analysis
+ * Enhanced Performance Analytics Module
+ * Tracks performance metrics, success rates, detailed timing, and provides predictive analysis
  */
 export class PerformanceAnalytics {
   constructor() {
@@ -9,10 +12,16 @@ export class PerformanceAnalytics {
       successes: [],
       failures: [],
       performance: [],
-      predictions: {}
+      predictions: {},
+      detailedTiming: [],
+      operationBreakdown: [],
+      sessionHistory: []
     };
     this.charts = {};
     this.storageKey = 'imghash-analytics';
+    this.operationTimer = new OperationTimer();
+    this.microBenchmark = new MicroBenchmark();
+    this.currentSessionTimer = null;
     this.loadStoredData();
   }
 
@@ -43,7 +52,7 @@ export class PerformanceAnalytics {
   }
 
   /**
-   * Record a hash spoofing attempt
+   * Record a hash spoofing attempt with enhanced timing data
    */
   recordAttempt(data) {
     const timestamp = new Date().toISOString();
@@ -55,7 +64,15 @@ export class PerformanceAnalytics {
       success: data.success,
       hashAlgorithm: data.hashAlgorithm,
       imageFormat: data.imageFormat,
-      fileSize: data.fileSize
+      fileSize: data.fileSize,
+      // Enhanced timing data
+      timingBreakdown: data.timingBreakdown || null,
+      performanceMetrics: {
+        attemptsPerSecond: data.attempts > 0 ? data.attempts / (data.duration / 1000) : 0,
+        averageTimePerAttempt: data.attempts > 0 ? data.duration / data.attempts : 0,
+        memoryUsage: data.memoryUsage || null,
+        cpuUtilization: data.cpuUtilization || null
+      }
     };
 
     this.metrics.attempts.push(record);
@@ -71,7 +88,7 @@ export class PerformanceAnalytics {
   }
 
   /**
-   * Record performance metrics
+   * Record detailed performance metrics with timing breakdown
    */
   recordPerformance(data) {
     const timestamp = new Date().toISOString();
@@ -80,11 +97,138 @@ export class PerformanceAnalytics {
       operation: data.operation,
       duration: data.duration,
       throughput: data.throughput,
-      memoryUsage: data.memoryUsage
+      memoryUsage: data.memoryUsage,
+      // Enhanced performance data
+      operationBreakdown: data.operationBreakdown || {},
+      systemMetrics: {
+        cpuCores: navigator.hardwareConcurrency || 'unknown',
+        userAgent: navigator.userAgent,
+        memoryLimit: performance.memory?.jsHeapSizeLimit || null
+      },
+      timingStatistics: data.timingStatistics || null
     };
 
     this.metrics.performance.push(record);
     this.saveData();
+  }
+
+  /**
+   * Record detailed timing breakdown for analysis
+   */
+  recordDetailedTiming(data) {
+    const timestamp = new Date().toISOString();
+    const record = {
+      timestamp,
+      sessionId: data.sessionId,
+      targetPrefix: data.targetPrefix,
+      algorithm: data.algorithm,
+      timingBreakdown: {
+        imageProcessing: data.imageProcessingTime || 0,
+        hashCalculation: data.hashCalculationTime || 0,
+        memoryOperations: data.memoryOperationsTime || 0,
+        totalAttemptTime: data.totalAttemptTime || 0
+      },
+      performanceMetrics: {
+        attemptsPerSecond: data.attemptsPerSecond || 0,
+        averageTimePerAttempt: data.averageTimePerAttempt || 0,
+        peakRate: data.peakRate || 0,
+        memoryEfficiency: data.memoryEfficiency || null
+      },
+      systemState: {
+        memoryUsage: data.memoryUsage || null,
+        activeWorkers: data.activeWorkers || 1,
+        cpuLoad: data.cpuLoad || null
+      }
+    };
+    
+    this.metrics.detailedTiming.push(record);
+    this.saveData();
+  }
+
+  /**
+   * Start a new performance session
+   */
+  startSession(targetPrefix, algorithm, maxAttempts) {
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    this.currentSessionTimer = new HashingTimer();
+    this.currentSessionTimer.start();
+    
+    const session = {
+      sessionId,
+      startTime: new Date().toISOString(),
+      targetPrefix,
+      algorithm,
+      maxAttempts,
+      timer: this.currentSessionTimer,
+      checkpoints: [],
+      endTime: null,
+      finalResult: null
+    };
+    
+    this.metrics.sessionHistory.push(session);
+    return session;
+  }
+
+  /**
+   * Update current session progress
+   */
+  updateSessionProgress(attempt, additionalData = {}) {
+    if (!this.currentSessionTimer) return null;
+    
+    const currentSession = this.metrics.sessionHistory[this.metrics.sessionHistory.length - 1];
+    if (!currentSession) return null;
+    
+    const checkpoint = this.currentSessionTimer.addCheckpoint(
+      'progress',
+      attempt,
+      currentSession.maxAttempts,
+      additionalData
+    );
+    
+    currentSession.checkpoints.push(checkpoint);
+    this.saveData();
+    
+    return checkpoint;
+  }
+
+  /**
+   * End current performance session
+   */
+  endSession(success, finalAttempts, finalHash = null, additionalData = {}) {
+    if (!this.currentSessionTimer) return null;
+    
+    const currentSession = this.metrics.sessionHistory[this.metrics.sessionHistory.length - 1];
+    if (!currentSession) return null;
+    
+    this.currentSessionTimer.stop();
+    
+    currentSession.endTime = new Date().toISOString();
+    currentSession.finalResult = {
+      success,
+      attempts: finalAttempts,
+      hash: finalHash,
+      performanceReport: this.currentSessionTimer.getPerformanceReport(),
+      statistics: this.currentSessionTimer.getStatistics(),
+      ...additionalData
+    };
+    
+    // Record detailed timing for this session
+    this.recordDetailedTiming({
+      sessionId: currentSession.sessionId,
+      targetPrefix: currentSession.targetPrefix,
+      algorithm: currentSession.algorithm,
+      attemptsPerSecond: finalAttempts / (currentSession.finalResult.performanceReport.duration),
+      averageTimePerAttempt: (currentSession.finalResult.performanceReport.duration * 1000) / finalAttempts,
+      peakRate: currentSession.finalResult.performanceReport.peakRate,
+      memoryUsage: currentSession.finalResult.memoryUsage,
+      ...additionalData
+    });
+    
+    this.currentSessionTimer = null;
+    this.saveData();
+    
+    return currentSession.finalResult;
   }
 
   /**
@@ -322,11 +466,296 @@ export class PerformanceAnalytics {
         successes: data.successes || [],
         failures: data.failures || [],
         performance: data.performance || [],
-        predictions: data.predictions || {}
+        predictions: data.predictions || {},
+        detailedTiming: data.detailedTiming || [],
+        operationBreakdown: data.operationBreakdown || [],
+        sessionHistory: data.sessionHistory || []
       };
       this.saveData();
       return true;
     }
     return false;
+  }
+
+  /**
+   * Get detailed timing analysis
+   */
+  getTimingAnalysis() {
+    const timingData = this.metrics.detailedTiming || [];
+    
+    if (timingData.length === 0) {
+      return {
+        hasData: false,
+        message: 'No timing data available'
+      };
+    }
+
+    // Analyze performance by algorithm
+    const algorithmAnalysis = {};
+    ['sha256', 'sha512'].forEach(algo => {
+      const algoData = timingData.filter(t => t.algorithm === algo);
+      if (algoData.length > 0) {
+        const rates = algoData.map(t => t.performanceMetrics.attemptsPerSecond);
+        const avgTimes = algoData.map(t => t.performanceMetrics.averageTimePerAttempt);
+        
+        algorithmAnalysis[algo] = {
+          sessions: algoData.length,
+          averageRate: rates.reduce((a, b) => a + b) / rates.length,
+          minRate: Math.min(...rates),
+          maxRate: Math.max(...rates),
+          averageTimePerAttempt: avgTimes.reduce((a, b) => a + b) / avgTimes.length,
+          reliability: this.calculateReliability(rates)
+        };
+      }
+    });
+
+    // Analyze performance trends
+    const recentSessions = timingData.slice(-10);
+    const performanceTrend = this.analyzeTrend(
+      recentSessions.map(t => t.performanceMetrics.attemptsPerSecond)
+    );
+
+    // Memory usage analysis
+    const memoryData = timingData
+      .filter(t => t.systemState.memoryUsage)
+      .map(t => t.systemState.memoryUsage.used);
+    
+    const memoryAnalysis = memoryData.length > 0 ? {
+      average: memoryData.reduce((a, b) => a + b) / memoryData.length,
+      min: Math.min(...memoryData),
+      max: Math.max(...memoryData),
+      trend: this.analyzeTrend(memoryData)
+    } : null;
+
+    return {
+      hasData: true,
+      totalSessions: timingData.length,
+      algorithmAnalysis,
+      performanceTrend,
+      memoryAnalysis,
+      recommendations: this.generatePerformanceRecommendations(algorithmAnalysis, performanceTrend)
+    };
+  }
+
+  /**
+   * Calculate reliability score based on performance consistency
+   */
+  calculateReliability(values) {
+    if (values.length < 2) return 1;
+    
+    const mean = values.reduce((a, b) => a + b) / values.length;
+    const variance = values.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    const coefficientOfVariation = stdDev / mean;
+    
+    // Lower coefficient of variation = higher reliability
+    return Math.max(0, 1 - coefficientOfVariation);
+  }
+
+  /**
+   * Analyze trend in performance data
+   */
+  analyzeTrend(values) {
+    if (values.length < 3) return 'insufficient_data';
+    
+    const recentValues = values.slice(-5);
+    let increasing = 0;
+    let decreasing = 0;
+    
+    for (let i = 1; i < recentValues.length; i++) {
+      if (recentValues[i] > recentValues[i - 1]) {
+        increasing++;
+      } else if (recentValues[i] < recentValues[i - 1]) {
+        decreasing++;
+      }
+    }
+    
+    if (increasing > decreasing) return 'improving';
+    if (decreasing > increasing) return 'declining';
+    return 'stable';
+  }
+
+  /**
+   * Generate performance recommendations based on analysis
+   */
+  generatePerformanceRecommendations(algorithmAnalysis, performanceTrend) {
+    const recommendations = [];
+    
+    // Algorithm comparison
+    if (algorithmAnalysis.sha256 && algorithmAnalysis.sha512) {
+      const sha256Rate = algorithmAnalysis.sha256.averageRate;
+      const sha512Rate = algorithmAnalysis.sha512.averageRate;
+      
+      if (sha256Rate > sha512Rate * 1.2) {
+        recommendations.push({
+          type: 'algorithm',
+          priority: 'medium',
+          message: 'SHA-256 performs significantly better than SHA-512 in your environment. Consider using SHA-256 for better performance.'
+        });
+      } else if (sha512Rate > sha256Rate * 1.2) {
+        recommendations.push({
+          type: 'algorithm',
+          priority: 'medium',
+          message: 'SHA-512 performs better than SHA-256 in your environment, which is unusual. Your hardware may have optimizations for SHA-512.'
+        });
+      }
+    }
+    
+    // Performance trend analysis
+    if (performanceTrend === 'declining') {
+      recommendations.push({
+        type: 'performance',
+        priority: 'high',
+        message: 'Performance has been declining in recent sessions. Consider restarting your browser or closing other applications to free up resources.'
+      });
+    } else if (performanceTrend === 'improving') {
+      recommendations.push({
+        type: 'performance',
+        priority: 'low',
+        message: 'Performance has been improving! Current optimization strategies are working well.'
+      });
+    }
+    
+    // Reliability analysis
+    Object.entries(algorithmAnalysis).forEach(([algo, analysis]) => {
+      if (analysis.reliability < 0.7) {
+        recommendations.push({
+          type: 'reliability',
+          priority: 'medium',
+          message: `${algo.toUpperCase()} performance is inconsistent. This might indicate system resource contention or thermal throttling.`
+        });
+      }
+    });
+    
+    return recommendations;
+  }
+
+  /**
+   * Get operation breakdown analysis
+   */
+  getOperationBreakdown() {
+    const operationStats = this.operationTimer.getAllStats();
+    const summary = this.operationTimer.getPerformanceSummary();
+    
+    return {
+      operations: operationStats,
+      summary,
+      bottlenecks: summary.hottestOperations,
+      recommendations: this.generateOperationRecommendations(summary.hottestOperations)
+    };
+  }
+
+  /**
+   * Generate recommendations based on operation analysis
+   */
+  generateOperationRecommendations(hottestOperations) {
+    const recommendations = [];
+    
+    hottestOperations.forEach((op, index) => {
+      if (index === 0) { // Biggest bottleneck
+        recommendations.push({
+          type: 'bottleneck',
+          priority: 'high',
+          operation: op.name,
+          message: `${op.name} is your biggest performance bottleneck, taking ${(op.totalTime).toFixed(2)}s total time across ${op.calls} calls.`
+        });
+      }
+      
+      if (op.averageTime > 50) { // Operations taking more than 50ms on average
+        recommendations.push({
+          type: 'optimization',
+          priority: 'medium',
+          operation: op.name,
+          message: `${op.name} takes an average of ${op.averageTime.toFixed(2)}ms per call. Consider optimizing this operation.`
+        });
+      }
+    });
+    
+    return recommendations;
+  }
+
+  /**
+   * Run micro-benchmarks on key operations
+   */
+  async runMicroBenchmarks() {
+    const results = {};
+    
+    // Benchmark hash algorithms
+    const testData = new Uint8Array(1024).fill(42);
+    
+    try {
+      // SHA-256 benchmark
+      results.sha256 = await this.microBenchmark.benchmark(
+        'sha256_hash',
+        async () => {
+          await crypto.subtle.digest('SHA-256', testData);
+        },
+        1000,
+        100
+      );
+      
+      // SHA-512 benchmark
+      results.sha512 = await this.microBenchmark.benchmark(
+        'sha512_hash',
+        async () => {
+          await crypto.subtle.digest('SHA-512', testData);
+        },
+        1000,
+        100
+      );
+      
+      // Array operations benchmark
+      results.arrayOperations = await this.microBenchmark.benchmark(
+        'array_operations',
+        () => {
+          const arr = new Uint8Array(1000);
+          arr.fill(Math.random() * 255);
+          return arr;
+        },
+        10000,
+        1000
+      );
+      
+      // Store benchmark results
+      this.recordPerformance({
+        operation: 'micro_benchmark',
+        duration: 0,
+        throughput: 0,
+        operationBreakdown: results,
+        timingStatistics: {
+          sha256: results.sha256.statistics,
+          sha512: results.sha512.statistics,
+          arrayOps: results.arrayOperations.statistics
+        }
+      });
+      
+    } catch (error) {
+      console.warn('Micro-benchmark failed:', error);
+      results.error = error.message;
+    }
+    
+    return results;
+  }
+
+  /**
+   * Get comprehensive performance report
+   */
+  getComprehensiveReport() {
+    return {
+      basicStats: this.getPerformanceStats(),
+      timingAnalysis: this.getTimingAnalysis(),
+      operationBreakdown: this.getOperationBreakdown(),
+      chartData: this.getChartData(),
+      sessionSummary: {
+        totalSessions: this.metrics.sessionHistory.length,
+        recentSessions: this.metrics.sessionHistory.slice(-5),
+        avgSessionDuration: this.metrics.sessionHistory.length > 0 ?
+          this.metrics.sessionHistory
+            .filter(s => s.finalResult)
+            .reduce((sum, s) => sum + s.finalResult.performanceReport.duration, 0) / 
+            this.metrics.sessionHistory.filter(s => s.finalResult).length : 0
+      },
+      exportTimestamp: new Date().toISOString()
+    };
   }
 }
