@@ -2,11 +2,34 @@
 
 A powerful tool for modifying image file hashes while preserving their visual appearance. This tool adds invisible metadata to image files to make their hash start with a desired prefix.
 
-Here's what the main dashboard looks like:
+## 📚 Table of Contents
+- [🖼️ Visual Overview](#-visual-overview)
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Usage](#usage)
+  - [Web Interface](#web-interface)
+  - [Command Line](#command-line)
+- [📊 Analytics Dashboard](#-analytics-dashboard)
+- [Installation](#installation)
+- [Technical Details](#technical-details)
+- [Examples](#examples)
+- [Performance Optimizations](#-performance-optimizations)
+- [Testing Suite](#-testing-suite)
+- [🚀 Future Enhancements](#-future-enhancements)
+- [Contributing](#contributing)
 
+## 🖼️ Visual Overview
+
+**Main Dashboard - Single Image Processing:**
 ![Main dashboard for Image Hash Spoofer tool showing a web interface.](screenshots/dashboard.png)
-LIVE TEST LINK: https://image-hash-spoofer.netlify.app/
 
+**Live Demo:** [https://image-hash-spoofer.netlify.app/](https://image-hash-spoofer.netlify.app/) 🚀
+
+**Batch Processing Interface:**
+![Batch processing mode with multiple file upload capabilities](screenshots/batch1.png)
+
+**Advanced Analytics Dashboard:**
+![Performance analytics with success rates and predictions](screenshots/analytics1.png)
 
 ## Original Problem Statement
 
@@ -63,6 +86,12 @@ The metadata is invisible when viewing the image but changes the file's hash. Th
 5. Click "🚀 Start Batch Processing"
 6. Monitor progress for each file in real-time
 7. Download all completed files or export results
+
+**Batch Processing Interface:**
+![Batch processing interface showing multiple file upload and processing options](screenshots/batch1.png)
+
+**Real-time Batch Progress:**
+![Real-time batch processing progress with individual file status tracking](screenshots/batch2.png)
 
 ### Command Line
 
@@ -143,6 +172,22 @@ node batch-spoof.js --help
 - `--export-results`: Export batch results to file
 - `--summary`: Show detailed summary after processing
 - `--quiet, -q`: Suppress progress output
+
+## 📊 Analytics Dashboard
+
+The web interface includes a comprehensive analytics dashboard for tracking performance and success rates:
+
+**Key Analytics Features:**
+- **Success Rates**: Track overall and per-prefix success rates
+- **Performance Statistics**: Processing times and throughput metrics  
+- **Algorithm Comparison**: SHA-256 vs SHA-512 performance
+- **Historical Trends**: Success rates over time
+- **Difficulty Predictor**: Estimates attempts needed for target prefixes
+- **Statistics Export**: Download analytics data as JSON
+- **Persistent Storage**: Analytics data saved locally
+
+**Analytics Interface:**
+![Advanced analytics with difficulty predictor and detailed performance metrics](screenshots/analytics2.png)
 
 ## Installation
 
