@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "spoof": "node spoof.js",
+    "batch": "node batch-spoof.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/unit",
     "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/integration",
@@ -17,7 +18,8 @@
     "test:e2e": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/e2e --runInBand"
   },
   "dependencies": {
-    "chart.js": "^4.4.6"
+    "chart.js": "^4.4.6",
+    "glob": "^10.4.5"
   },
   "devDependencies": {
     "@types/jest": "^29.5.13",

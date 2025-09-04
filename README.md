@@ -27,10 +27,13 @@ Output Example for 0x24:
 
 - **Multiple Formats**: Supports PNG and JPEG image formats
 - **Hash Algorithms**: SHA-256 and SHA-512 support
-- **Web Interface**: Easy-to-use browser-based interface
-- **Command Line**: Node.js CLI for batch processing
+- **Web Interface**: Easy-to-use browser-based interface with batch processing
+- **Command Line**: Node.js CLI for single and batch processing
+- **Batch Processing**: Process multiple images simultaneously
 - **Visual Preservation**: Images look identical to the human eye
 - **Progress Tracking**: Real-time progress updates during processing
+- **Pattern Matching**: Glob pattern support for batch operations
+- **Configuration Files**: JSON-based batch job configuration
 
 ## How It Works
 
@@ -44,6 +47,7 @@ The metadata is invisible when viewing the image but changes the file's hash. Th
 
 ### Web Interface
 
+#### Single Image Mode
 1. Open `index.html` in your browser
 2. Enter your target hash prefix (e.g., `0x24`, `0xabc123`)
 3. Select your hash algorithm (SHA-512 recommended)
@@ -51,8 +55,18 @@ The metadata is invisible when viewing the image but changes the file's hash. Th
 5. Click "Start Hash Spoofing"
 6. Download the modified image when complete
 
+#### Batch Processing Mode
+1. Open the web interface and click "📦 Switch to Batch Mode"
+2. Enter your target hash prefix for all images
+3. Select your hash algorithm
+4. Upload multiple image files (drag & drop supported)
+5. Click "🚀 Start Batch Processing"
+6. Monitor progress for each file in real-time
+7. Download all completed files or export results
+
 ### Command Line
 
+#### Single Image Processing
 ```bash
 # Basic usage
 node spoof.js 0x24 original.jpg altered.jpg
@@ -65,12 +79,70 @@ node spoof.js 0xabc123 photo.jpg spoofed.jpg sha256
 node spoof.js 0x999 image.png modified.png sha512
 ```
 
+#### Batch Processing
+```bash
+# Process all JPGs in current directory
+node batch-spoof.js pattern "*.jpg" ./output 0x24 --algorithm sha512
+
+# Process images from subdirectories
+node batch-spoof.js pattern "photos/**/*.{jpg,png}" ./spoofed 0xabc123 --suffix _modified
+
+# Use a configuration file
+node batch-spoof.js config batch-config.json --export-results results.json
+
+# Process specific files with different settings
+node batch-spoof.js files 0x24 sha512 photo1.jpg out1.jpg photo2.png out2.png
+
+# Get help for batch processing
+node batch-spoof.js --help
+```
+
 ### Parameters
 
+#### Single Image Parameters
 - `target_hex`: Desired hash prefix (must start with "0x")
 - `input_image`: Path to original image file
 - `output_image`: Path for the modified image file
 - `hash_algorithm`: Optional, "sha256" or "sha512" (default: sha512)
+
+#### Batch Processing Configuration
+
+**Configuration File Format (`batch-config.json`)**:
+```json
+{
+  "jobs": [
+    {
+      "inputPath": "photo1.jpg",
+      "outputPath": "output/photo1_spoofed.jpg",
+      "targetHex": "0x24",
+      "hashAlgorithm": "sha512"
+    },
+    {
+      "inputPath": "photo2.png",
+      "outputPath": "output/photo2_spoofed.png",
+      "targetHex": "0xabc",
+      "hashAlgorithm": "sha256"
+    }
+  ],
+  "patterns": [
+    {
+      "pattern": "images/*.jpg",
+      "outputDir": "./output",
+      "targetHex": "0x123",
+      "hashAlgorithm": "sha512",
+      "outputSuffix": "_modified"
+    }
+  ]
+}
+```
+
+**Batch Command Options**:
+- `--algorithm, -a`: Hash algorithm (sha256|sha512) [default: sha512]
+- `--suffix, -s`: Suffix for output filenames [default: _spoofed]
+- `--export-config`: Export batch configuration to file
+- `--export-results`: Export batch results to file
+- `--summary`: Show detailed summary after processing
+- `--quiet, -q`: Suppress progress output
 
 ## Installation
 
@@ -144,7 +216,53 @@ Successfully created spoofed image: spoofed.jpg
 Verification hash: 2448a6512f93de43f4b5b8c7e2a1d9f6...
 ```
 
-### Verification
+### Batch Processing Examples
+
+#### CLI Batch Processing
+```bash
+# Process all images in a directory
+$ node batch-spoof.js pattern "images/*.{jpg,png}" ./output 0x24 --summary
+🚀 Image Hash Spoofer - Batch Processing Tool
+
+🔍 Scanning for images...
+   Pattern: images/*.{jpg,png}
+   Output: ./output
+   Target: 0x24
+   Algorithm: sha512
+✅ Found 5 images to process
+
+📷 Processing: photo1.jpg -> photo1_spoofed.jpg
+🎯 Target: 0x24, Algorithm: sha512
+✅ Completed in 12.45s
+📝 Final hash: 2448a6512f93de43f4b5b...
+
+⏳ Progress: 100.0% | Completed: 5 | Failed: 0 | Time: 45.2s
+
+============================================================
+📊 BATCH PROCESSING SUMMARY
+============================================================
+Total Jobs: 5
+Completed: 5
+Failed: 0
+Success Rate: 100.0%
+Total Time: 45.23s
+============================================================
+```
+
+#### Web Interface Batch Results
+```
+🎉 Batch Processing Complete!
+
+Total Files: 3
+Completed: 2 ✅
+Failed: 1 ❌
+Success Rate: 66.7%
+Total Time: 28.45s
+
+📥 Download All Completed Files    📊 Export Results
+```
+
+### Single Image Verification
 ```bash
 $ sha512sum spoofed.jpg
 2448a6512f93de43f4b5b8c7e2a1d9f6...  spoofed.jpg

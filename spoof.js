@@ -227,10 +227,24 @@ class OptimizedImageHashSpoofer {
 function main() {
   const args = process.argv.slice(2);
   
+  // Check for batch processing mode
+  if (args.length > 0 && args[0] === '--batch') {
+    console.log('🚀 For batch processing, please use the dedicated batch-spoof.js script:');
+    console.log('   node batch-spoof.js --help');
+    console.log('');
+    console.log('Quick examples:');
+    console.log('   node batch-spoof.js pattern "*.jpg" ./output 0x24');
+    console.log('   node batch-spoof.js config batch-config.json');
+    process.exit(0);
+  }
+  
   if (args.length < 3 || args.length > 4) {
     console.log('Usage: node spoof.js <target_hex> <input_image> <output_image> [hash_algorithm]');
     console.log('Example: node spoof.js 0x24 original.jpg altered.jpg sha512');
     console.log('Supported hash algorithms: sha256, sha512 (default)');
+    console.log('');
+    console.log('💡 For batch processing multiple files, use:');
+    console.log('   node batch-spoof.js --help');
     process.exit(1);
   }
 
