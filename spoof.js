@@ -13,6 +13,8 @@ class OptimizedImageHashSpoofer {
   constructor() {
     this.PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
     this.JPEG_SIGNATURE = Buffer.from([0xFF, 0xD8]);
+    this.GIF87A_SIGNATURE = Buffer.from([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]); // GIF87a
+    this.GIF89A_SIGNATURE = Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]); // GIF89a
     // Pre-generate CRC table for better performance
     this.crcTable = this.makeCRCTable();
     // Use available CPU cores for parallel processing
@@ -54,6 +56,13 @@ class OptimizedImageHashSpoofer {
     }
     
     return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  // Check if file is GIF format
+  isGIF(content) {
+    if (content.length < 6) return false;
+    const header = content.subarray(0, 6);
+    return header.equals(this.GIF87A_SIGNATURE) || header.equals(this.GIF89A_SIGNATURE);
   }
 
   // Calculate optimal attempt count based on target difficulty
@@ -131,6 +140,56 @@ class OptimizedImageHashSpoofer {
     ]);
   }
 
+  // Add GIF comment extension
+  addGIFComment(content, comment) {
+    if (!this.isGIF(content)) {
+      throw new Error('Not a valid GIF file');
+    }
+
+    // Find a good position to insert the comment extension
+    // GIF structure: Header (6 bytes) + Logical Screen Descriptor (7 bytes) + [Global Color Table] + Data Stream
+    let insertPos = 13; // After header + logical screen descriptor
+
+    // Check if there's a Global Color Table
+    const logicalScreenDescriptor = content.subarray(6, 13);
+    const globalColorTableFlag = (logicalScreenDescriptor[4] & 0x80) !== 0;
+    
+    if (globalColorTableFlag) {
+      const globalColorTableSize = logicalScreenDescriptor[4] & 0x07;
+      const colorTableSize = 3 * Math.pow(2, globalColorTableSize + 1);
+      insertPos += colorTableSize;
+    }
+
+    // Create GIF Comment Extension
+    // Format: Extension Introducer (0x21) + Comment Label (0xFE) + Data Sub-blocks + Block Terminator (0x00)
+    const commentData = Buffer.from(comment, 'utf-8');
+    const maxSubBlockSize = 255;
+    const subBlocks = [];
+    
+    // Split comment data into sub-blocks of max 255 bytes each
+    for (let i = 0; i < commentData.length; i += maxSubBlockSize) {
+      const subBlockData = commentData.subarray(i, Math.min(i + maxSubBlockSize, commentData.length));
+      const subBlock = Buffer.alloc(1 + subBlockData.length);
+      subBlock[0] = subBlockData.length; // Sub-block size
+      subBlockData.copy(subBlock, 1);
+      subBlocks.push(subBlock);
+    }
+
+    // Build the complete comment extension
+    const commentExtension = Buffer.concat([
+      Buffer.from([0x21, 0xFE]), // Extension Introducer + Comment Label
+      ...subBlocks,
+      Buffer.from([0x00]) // Block Terminator
+    ]);
+
+    // Insert comment extension
+    return Buffer.concat([
+      content.subarray(0, insertPos),
+      commentExtension,
+      content.subarray(insertPos)
+    ]);
+  }
+
   // Find matching hash for PNG
   findMatchingHashPNG(targetHex, originalChunks, hashAlgorithm = 'sha512', maxAttempts = 10000000) {
     const targetPrefix = targetHex.startsWith('0x') ? targetHex.slice(2) : targetHex;
@@ -184,6 +243,29 @@ class OptimizedImageHashSpoofer {
     throw new Error(`Could not find matching hash after ${maxAttempts} attempts`);
   }
 
+  // Find matching hash for GIF
+  findMatchingHashGIF(targetHex, originalContent, hashAlgorithm = 'sha512', maxAttempts = 10000000) {
+    const targetPrefix = targetHex.startsWith('0x') ? targetHex.slice(2) : targetHex;
+    
+    for (let i = 0; i < maxAttempts; i++) {
+      if (i % 100000 === 0) {
+        console.log(`Attempt ${i}/${maxAttempts}...`);
+      }
+
+      const comment = `Hash attempt ${i} - ${Date.now()}`;
+      const testContent = this.addGIFComment(originalContent, comment);
+
+      const hash = createHash(hashAlgorithm).update(testContent).digest('hex');
+      
+      if (hash.startsWith(targetPrefix.toLowerCase())) {
+        console.log(`Found matching hash after ${i + 1} attempts!`);
+        return { content: testContent, hash };
+      }
+    }
+
+    throw new Error(`Could not find matching hash after ${maxAttempts} attempts`);
+  }
+
   // Main spoofing function
   async spoofImage(targetHex, inputPath, outputPath, hashAlgorithm = 'sha512') {
     console.log(`Starting hash spoofing for target: ${targetHex}`);
@@ -210,8 +292,13 @@ class OptimizedImageHashSpoofer {
       const { content: modifiedContent, hash } = this.findMatchingHashJPEG(targetHex, content, hashAlgorithm);
       result = modifiedContent;
       console.log(`Final hash: ${hash}`);
+    } else if (this.isGIF(content)) {
+      console.log('Detected GIF format');
+      const { content: modifiedContent, hash } = this.findMatchingHashGIF(targetHex, content, hashAlgorithm);
+      result = modifiedContent;
+      console.log(`Final hash: ${hash}`);
     } else {
-      throw new Error('Unsupported image format. Only PNG and JPEG are supported.');
+      throw new Error('Unsupported image format. Only PNG, JPEG, and GIF are supported.');
     }
 
     fs.writeFileSync(outputPath, result);
@@ -224,7 +311,7 @@ class OptimizedImageHashSpoofer {
 }
 
 // CLI interface
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   
   // Check for batch processing mode

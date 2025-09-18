@@ -5,6 +5,8 @@ class WebImageHashSpoofer {
     constructor() {
         this.PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
         this.JPEG_SIGNATURE = new Uint8Array([0xFF, 0xD8]);
+        this.GIF87A_SIGNATURE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]); // GIF87a
+        this.GIF89A_SIGNATURE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]); // GIF89a
         this.worker = null;
         this.workerPool = [];
         this.poolSize = Math.min(navigator.hardwareConcurrency || 4, 4);
@@ -19,6 +21,8 @@ class WebImageHashSpoofer {
                 constructor() {
                     this.PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
                     this.JPEG_SIGNATURE = new Uint8Array([0xFF, 0xD8]);
+                    this.GIF87A_SIGNATURE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]); // GIF87a
+                    this.GIF89A_SIGNATURE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]); // GIF89a
                     // Pre-generate CRC table once for better performance
                     this.crcTable = this.makeCRCTable();
                     // Pre-computed hex lookup table
@@ -156,6 +160,74 @@ class WebImageHashSpoofer {
                     return true;
                 }
 
+                // Check if file is GIF format
+                isGIF(content) {
+                    if (content.length < 6) return false;
+                    const header = content.slice(0, 6);
+                    return this.arraysEqual(header, this.GIF87A_SIGNATURE) || this.arraysEqual(header, this.GIF89A_SIGNATURE);
+                }
+
+                // Add GIF comment extension
+                addGIFComment(content, comment) {
+                    if (!this.isGIF(content)) {
+                        throw new Error('Not a valid GIF file');
+                    }
+
+                    // Find a good position to insert the comment extension
+                    // GIF structure: Header (6 bytes) + Logical Screen Descriptor (7 bytes) + [Global Color Table] + Data Stream
+                    let insertPos = 13; // After header + logical screen descriptor
+
+                    // Check if there's a Global Color Table
+                    const logicalScreenDescriptor = content.slice(6, 13);
+                    const globalColorTableFlag = (logicalScreenDescriptor[4] & 0x80) !== 0;
+                    
+                    if (globalColorTableFlag) {
+                        const globalColorTableSize = logicalScreenDescriptor[4] & 0x07;
+                        const colorTableSize = 3 * Math.pow(2, globalColorTableSize + 1);
+                        insertPos += colorTableSize;
+                    }
+
+                    // Create GIF Comment Extension
+                    // Format: Extension Introducer (0x21) + Comment Label (0xFE) + Data Sub-blocks + Block Terminator (0x00)
+                    const commentData = new TextEncoder().encode(comment);
+                    const maxSubBlockSize = 255;
+                    const subBlocks = [];
+                    
+                    // Split comment data into sub-blocks of max 255 bytes each
+                    for (let i = 0; i < commentData.length; i += maxSubBlockSize) {
+                        const subBlockData = commentData.slice(i, Math.min(i + maxSubBlockSize, commentData.length));
+                        const subBlock = new Uint8Array(1 + subBlockData.length);
+                        subBlock[0] = subBlockData.length; // Sub-block size
+                        subBlock.set(subBlockData, 1);
+                        subBlocks.push(subBlock);
+                    }
+
+                    // Build the complete comment extension
+                    let commentExtensionLength = 2 + 1; // Extension Introducer + Comment Label + Block Terminator
+                    subBlocks.forEach(block => commentExtensionLength += block.length);
+                    
+                    const commentExtension = new Uint8Array(commentExtensionLength);
+                    let pos = 0;
+                    
+                    commentExtension[pos++] = 0x21; // Extension Introducer
+                    commentExtension[pos++] = 0xFE; // Comment Label
+                    
+                    subBlocks.forEach(block => {
+                        commentExtension.set(block, pos);
+                        pos += block.length;
+                    });
+                    
+                    commentExtension[pos] = 0x00; // Block Terminator
+
+                    // Insert comment extension
+                    const result = new Uint8Array(content.length + commentExtension.length);
+                    result.set(content.slice(0, insertPos), 0);
+                    result.set(commentExtension, insertPos);
+                    result.set(content.slice(insertPos), insertPos + commentExtension.length);
+                    
+                    return result;
+                }
+
                 // Calculate optimal attempt count based on target difficulty
                 calculateOptimalMaxAttempts(targetPrefix) {
                     const prefixLength = targetPrefix.length;
@@ -182,7 +254,7 @@ class WebImageHashSpoofer {
                     };
                 }
 
-                async findMatchingHash(targetHex, originalData, isPNG, hashAlgorithm, maxAttempts = 1000000) {
+                async findMatchingHash(targetHex, originalData, imageFormat, hashAlgorithm, maxAttempts = 1000000) {
                     const targetPrefix = targetHex.startsWith('0x') ? targetHex.slice(2).toLowerCase() : targetHex.toLowerCase();
                     const optimalMaxAttempts = this.calculateOptimalMaxAttempts(targetPrefix);
                     const actualMaxAttempts = Math.min(maxAttempts, optimalMaxAttempts);
@@ -194,7 +266,7 @@ class WebImageHashSpoofer {
                     
                     // Pre-parse chunks for PNG to avoid repeated parsing
                     let chunks;
-                    if (isPNG) {
+                    if (imageFormat === 'PNG') {
                         chunks = this.parsePNGChunks(originalData);
                     }
                     
@@ -220,7 +292,7 @@ class WebImageHashSpoofer {
 
                         let testContent;
                         
-                        if (isPNG) {
+                        if (imageFormat === 'PNG') {
                             const testData = new TextEncoder().encode('Hash attempt ' + i + ' - ' + Date.now());
                             const commentChunk = this.createPNGChunk(new Uint8Array([116, 69, 88, 116]), testData); // tEXt
                             const iendChunk = this.createPNGChunk(new Uint8Array([73, 69, 78, 68]), new Uint8Array(0)); // IEND
@@ -243,6 +315,9 @@ class WebImageHashSpoofer {
                             pos += commentChunk.length;
                             
                             testContent.set(iendChunk, pos);
+                        } else if (imageFormat === 'GIF') {
+                            const comment = 'Hash attempt ' + i + ' - ' + Date.now();
+                            testContent = this.addGIFComment(originalData, comment);
                         } else {
                             const comment = 'Hash attempt ' + i + ' - ' + Date.now();
                             testContent = this.addJPEGComment(originalData, comment);
@@ -277,9 +352,9 @@ class WebImageHashSpoofer {
             const worker = new OptimizedHashWorker();
 
             self.onmessage = async function(e) {
-                const { targetHex, originalData, isPNG, hashAlgorithm, maxAttempts } = e.data;
+                const { targetHex, originalData, imageFormat, hashAlgorithm, maxAttempts } = e.data;
                 const dataArray = new Uint8Array(originalData);
-                await worker.findMatchingHash(targetHex, dataArray, isPNG, hashAlgorithm, maxAttempts);
+                await worker.findMatchingHash(targetHex, dataArray, imageFormat, hashAlgorithm, maxAttempts);
             };
         `;
 
@@ -299,9 +374,19 @@ class WebImageHashSpoofer {
                 const content = new Uint8Array(e.target.result);
                 const isPNG = this.arraysEqual(content.slice(0, 8), this.PNG_SIGNATURE);
                 const isJPEG = this.arraysEqual(content.slice(0, 2), this.JPEG_SIGNATURE);
+                const isGIF87A = this.arraysEqual(content.slice(0, 6), this.GIF87A_SIGNATURE);
+                const isGIF89A = this.arraysEqual(content.slice(0, 6), this.GIF89A_SIGNATURE);
+                const isGIF = isGIF87A || isGIF89A;
 
-                if (!isPNG && !isJPEG) {
-                    reject(new Error('Unsupported image format. Only PNG and JPEG are supported.'));
+                let imageFormat;
+                if (isPNG) {
+                    imageFormat = 'PNG';
+                } else if (isJPEG) {
+                    imageFormat = 'JPEG';
+                } else if (isGIF) {
+                    imageFormat = 'GIF';
+                } else {
+                    reject(new Error('Unsupported image format. Only PNG, JPEG, and GIF are supported.'));
                     return;
                 }
 
@@ -312,7 +397,15 @@ class WebImageHashSpoofer {
                         onProgress(attempt, maxAttempts, timing, memoryUsage);
                     } else if (type === 'success') {
                         const resultArray = new Uint8Array(resultContent);
-                        const blob = new Blob([resultArray], { type: isPNG ? 'image/png' : 'image/jpeg' });
+                        let mimeType;
+                        if (imageFormat === 'PNG') {
+                            mimeType = 'image/png';
+                        } else if (imageFormat === 'GIF') {
+                            mimeType = 'image/gif';
+                        } else {
+                            mimeType = 'image/jpeg';
+                        }
+                        const blob = new Blob([resultArray], { type: mimeType });
                         resolve({ blob, hash, attempts, timing });
                     } else if (type === 'error') {
                         reject(new Error(message));
@@ -322,7 +415,7 @@ class WebImageHashSpoofer {
                 this.worker.postMessage({
                     targetHex,
                     originalData: Array.from(content),
-                    isPNG,
+                    imageFormat,
                     hashAlgorithm,
                     maxAttempts: 1000000
                 });
@@ -347,6 +440,9 @@ export { WebImageHashSpoofer };
 // Import batch processor
 import { WebBatchProcessor } from './web-batch-processor.js';
 
+// Import theme manager
+import { themeManager } from './theme-manager.js';
+
 // UI Management
 class UI {
     constructor() {
@@ -356,6 +452,7 @@ class UI {
         this.batchFiles = [];
         this.initializeEventListeners();
         this.setupBatchProcessing();
+        this.setupThemeToggle();
     }
 
     initializeEventListeners() {
@@ -368,9 +465,9 @@ class UI {
             const file = e.target.files[0];
             if (file) {
                 // Validate file type
-                const validTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+                const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
                 if (!validTypes.includes(file.type)) {
-                    this.showResult('Please select a valid PNG or JPEG image file', 'error');
+                    this.showResult('Please select a valid PNG, JPEG, or GIF image file', 'error');
                     fileInput.value = '';
                     return;
                 }
@@ -991,6 +1088,23 @@ class UI {
         } catch (error) {
             this.showResult(`Download Error: ${error.message}`, 'error');
         }
+    }
+
+    // Setup theme toggle functionality
+    setupThemeToggle() {
+        // Create and insert theme toggle
+        themeManager.createThemeToggle();
+        
+        // Listen for theme changes to update chart colors if needed
+        window.addEventListener('themechange', (e) => {
+            const { theme } = e.detail;
+            console.log(`Theme changed to: ${theme}`);
+            
+            // Update analytics charts if they exist
+            if (typeof createSimpleCharts === 'function') {
+                setTimeout(() => createSimpleCharts(), 100);
+            }
+        });
     }
 }
 

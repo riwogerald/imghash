@@ -48,7 +48,7 @@ Output Example for 0x24:
 
 ## Features
 
-- **Multiple Formats**: Supports PNG and JPEG image formats
+- **Multiple Formats**: Supports PNG, JPEG, and GIF image formats
 - **Hash Algorithms**: SHA-256 and SHA-512 support
 - **Web Interface**: Easy-to-use browser-based interface with batch processing
 - **Command Line**: Node.js CLI for single and batch processing
@@ -63,6 +63,7 @@ Output Example for 0x24:
 The tool works by adding invisible metadata to image files:
 - **PNG files**: Adds tEXt chunks with comment data
 - **JPEG files**: Inserts comment segments (0xFFFE markers)
+- **GIF files**: Adds comment extensions (0x21FE blocks)
 
 The metadata is invisible when viewing the image but changes the file's hash. The tool uses brute force to find metadata that produces a hash starting with your desired prefix.
 
@@ -106,6 +107,7 @@ node spoof.js 0x24 original.png altered.png sha512
 # Examples
 node spoof.js 0xabc123 photo.jpg spoofed.jpg sha256
 node spoof.js 0x999 image.png modified.png sha512
+node spoof.js 0x24 animation.gif spoofed.gif sha512
 ```
 
 #### Batch Processing
@@ -114,7 +116,7 @@ node spoof.js 0x999 image.png modified.png sha512
 node batch-spoof.js pattern "*.jpg" ./output 0x24 --algorithm sha512
 
 # Process images from subdirectories
-node batch-spoof.js pattern "photos/**/*.{jpg,png}" ./spoofed 0xabc123 --suffix _modified
+node batch-spoof.js pattern "photos/**/*.{jpg,png,gif}" ./spoofed 0xabc123 --suffix _modified
 
 # Use a configuration file
 node batch-spoof.js config batch-config.json --export-results results.json
@@ -222,6 +224,12 @@ node spoof.js 0x24 image.jpg spoofed.jpg
 - Maintains JPEG structure and compatibility
 - Preserves EXIF and other metadata
 
+### GIF Implementation
+- Adds comment extensions (0x21FE blocks) after the logical screen descriptor
+- Supports both GIF87a and GIF89a formats
+- Maintains GIF structure and animation compatibility
+- Preserves color tables and extension blocks
+
 ### Performance
 - Brute force approach with optimized iterations
 - Progress reporting every 10,000 attempts (web) / 100,000 (CLI)
@@ -243,7 +251,7 @@ This tool is designed for legitimate purposes such as:
 - Longer hash prefixes require exponentially more attempts
 - Processing time varies based on target prefix and system performance
 - Maximum attempts limited to prevent infinite loops
-- Only supports PNG and JPEG formats currently
+- Currently supports PNG, JPEG, and GIF formats
 
 ## Examples
 
@@ -259,6 +267,17 @@ Found matching hash after 234567 attempts!
 Final hash: 2448a6512f93de43f4b5b8c7e2a1d9f6...
 Successfully created spoofed image: spoofed.jpg
 Verification hash: 2448a6512f93de43f4b5b8c7e2a1d9f6...
+```
+
+```bash
+$ node spoof.js 0x24 animation.gif spoofed.gif sha512
+Starting hash spoofing for target: 0x24
+Using hash algorithm: sha512
+Detected GIF format
+Found matching hash after 326 attempts!
+Final hash: 2416934c88b17612b1e98e079bdb4402...
+Successfully created spoofed image: spoofed.gif
+Verification hash: 2416934c88b17612b1e98e079bdb4402...
 ```
 
 ### Batch Processing Examples
@@ -432,9 +451,9 @@ While the current version includes comprehensive batch processing, there are man
 - **WebP Support**: Modern web format with superior compression
 - **TIFF Support**: Professional and scientific image format
 - **BMP Support**: Simple format for easier spoofing operations
-- **GIF Support**: Animated images (spoof first frame)
 - **HEIC/HEIF**: Apple's modern image formats
 - **SVG Support**: Vector graphics with metadata injection
+- **Advanced GIF Features**: Enhanced support for complex animations and optimizations
 
 ### 🔐 **Advanced Hash Algorithm Support**
 - **MD5**: Legacy support for older systems
