@@ -58,6 +58,13 @@ class OptimizedImageHashSpoofer {
     return (crc ^ 0xFFFFFFFF) >>> 0;
   }
 
+  // CRC32 hash computation for file content (as hex string)
+  computeCRC32Hash(data) {
+    const crc = this.calculateCRC32(data);
+    // Convert CRC32 to 8-character hex string (padded with zeros)
+    return crc.toString(16).padStart(8, '0');
+  }
+
   // Check if file is GIF format
   isGIF(content) {
     if (content.length < 6) return false;
@@ -209,7 +216,12 @@ class OptimizedImageHashSpoofer {
         this.createPNGChunk(Buffer.from('IEND'), Buffer.alloc(0))
       ]);
 
-      const hash = createHash(hashAlgorithm).update(testContent).digest('hex');
+      let hash;
+      if (hashAlgorithm === 'crc32') {
+        hash = this.computeCRC32Hash(testContent);
+      } else {
+        hash = createHash(hashAlgorithm).update(testContent).digest('hex');
+      }
       
       if (hash.startsWith(targetPrefix.toLowerCase())) {
         console.log(`Found matching hash after ${i + 1} attempts!`);
@@ -232,7 +244,12 @@ class OptimizedImageHashSpoofer {
       const comment = `Hash attempt ${i} - ${Date.now()}`;
       const testContent = this.addJPEGComment(originalContent, comment);
 
-      const hash = createHash(hashAlgorithm).update(testContent).digest('hex');
+      let hash;
+      if (hashAlgorithm === 'crc32') {
+        hash = this.computeCRC32Hash(testContent);
+      } else {
+        hash = createHash(hashAlgorithm).update(testContent).digest('hex');
+      }
       
       if (hash.startsWith(targetPrefix.toLowerCase())) {
         console.log(`Found matching hash after ${i + 1} attempts!`);
@@ -255,7 +272,12 @@ class OptimizedImageHashSpoofer {
       const comment = `Hash attempt ${i} - ${Date.now()}`;
       const testContent = this.addGIFComment(originalContent, comment);
 
-      const hash = createHash(hashAlgorithm).update(testContent).digest('hex');
+      let hash;
+      if (hashAlgorithm === 'crc32') {
+        hash = this.computeCRC32Hash(testContent);
+      } else {
+        hash = createHash(hashAlgorithm).update(testContent).digest('hex');
+      }
       
       if (hash.startsWith(targetPrefix.toLowerCase())) {
         console.log(`Found matching hash after ${i + 1} attempts!`);
@@ -305,7 +327,12 @@ class OptimizedImageHashSpoofer {
     console.log(`Successfully created spoofed image: ${outputPath}`);
     
     // Verify the result
-    const verification = createHash(hashAlgorithm).update(result).digest('hex');
+    let verification;
+    if (hashAlgorithm === 'crc32') {
+      verification = this.computeCRC32Hash(result);
+    } else {
+      verification = createHash(hashAlgorithm).update(result).digest('hex');
+    }
     console.log(`Verification hash: ${verification}`);
   }
 }
@@ -328,7 +355,7 @@ async function main() {
   if (args.length < 3 || args.length > 4) {
     console.log('Usage: node spoof.js <target_hex> <input_image> <output_image> [hash_algorithm]');
     console.log('Example: node spoof.js 0x24 original.jpg altered.jpg sha512');
-    console.log('Supported hash algorithms: sha256, sha512 (default)');
+    console.log('Supported hash algorithms: sha256, sha512 (default), crc32');
     console.log('');
     console.log('💡 For batch processing multiple files, use:');
     console.log('   node batch-spoof.js --help');

@@ -53,6 +53,13 @@ class WebImageHashSpoofer {
                     return this.bytesToHex(hashArray);
                 }
 
+                // CRC32 hash computation for web worker
+                crc32(data) {
+                    const crc = this.calculateCRC32(data);
+                    // Convert CRC32 to 8-character hex string (padded with zeros)
+                    return crc.toString(16).padStart(8, '0');
+                }
+
                 createPNGChunk(chunkType, data) {
                     const length = new ArrayBuffer(4);
                     new DataView(length).setUint32(0, data.length, false);
@@ -323,7 +330,14 @@ class WebImageHashSpoofer {
                             testContent = this.addJPEGComment(originalData, comment);
                         }
 
-                        const hash = await (hashAlgorithm === 'sha512' ? this.sha512(testContent) : this.sha256(testContent));
+                        let hash;
+                        if (hashAlgorithm === 'crc32') {
+                            hash = this.crc32(testContent);
+                        } else if (hashAlgorithm === 'sha512') {
+                            hash = await this.sha512(testContent);
+                        } else {
+                            hash = await this.sha256(testContent);
+                        }
                         
                         if (hash.startsWith(targetPrefix)) {
                             const finalTime = performance.now();

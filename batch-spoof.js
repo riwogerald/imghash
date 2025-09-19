@@ -52,7 +52,7 @@ ${colorize('EXAMPLES:', 'yellow')}
   node batch-spoof.js files 0x24 sha512 photo1.jpg out1.jpg photo2.png out2.png
 
 ${colorize('OPTIONS:', 'yellow')}
-  --algorithm, -a      Hash algorithm (sha256|sha512) [default: sha512]
+  --algorithm, -a      Hash algorithm (sha256|sha512|crc32) [default: sha512]
   --suffix, -s         Suffix for output filenames [default: _spoofed]
   --export-config      Export batch configuration to file
   --export-results     Export batch results to file

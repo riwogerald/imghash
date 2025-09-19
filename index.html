@@ -1176,7 +1176,7 @@
         
         <div class="info-box">
             <h3>How it works</h3>
-            <p>This tool adds invisible metadata to your image file to make its hash start with your desired prefix. The image will look identical but have a different file hash. Supports PNG and JPEG formats with SHA-256 or SHA-512 algorithms.</p>
+            <p>This tool adds invisible metadata to your image file to make its hash start with your desired prefix. The image will look identical but have a different file hash. Supports PNG, JPEG, and GIF formats with SHA-256, SHA-512, or CRC32 algorithms.</p>
         </div>
 
         <form id="spoofForm">
@@ -1190,13 +1190,14 @@
                 <select id="hashAlgorithm">
                     <option value="sha512">SHA-512</option>
                     <option value="sha256">SHA-256</option>
+                    <option value="crc32">CRC32</option>
                 </select>
             </div>
 
             <div class="form-group">
                 <label for="imageFile">Select Image File</label>
                 <div class="file-input-wrapper">
-                    <input type="file" id="imageFile" class="file-input" accept="image/png,image/jpeg,image/jpg" required>
+                    <input type="file" id="imageFile" class="file-input" accept="image/png,image/jpeg,image/jpg,image/gif" required>
                     <div class="file-input-display" id="fileDisplay">
                         <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
@@ -1265,6 +1266,7 @@
                     <select id="predictionAlgorithm">
                         <option value="sha256">SHA-256</option>
                         <option value="sha512">SHA-512</option>
+                        <option value="crc32">CRC32</option>
                     </select>
                     <button id="generatePrediction" class="analytics-btn" onclick="generatePrediction()">Predict</button>
                 </div>

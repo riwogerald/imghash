@@ -55,7 +55,7 @@ export class BatchProcessor {
      */
     async addJobsFromPattern(pattern, outputDir, targetHex, hashAlgorithm = 'sha512', outputSuffix = '_spoofed') {
         const files = await glob(pattern, { nodir: true });
-        const supportedExtensions = ['.jpg', '.jpeg', '.png'];
+        const supportedExtensions = ['.jpg', '.jpeg', '.png', '.gif'];
         const imageFiles = files.filter(file => 
             supportedExtensions.includes(path.extname(file).toLowerCase())
         );
@@ -278,8 +278,12 @@ export class BatchProcessor {
 
             // Verify and get the final hash
             const content = fs.readFileSync(job.outputPath);
-            const { createHash } = await import('node:crypto');
-            job.hash = createHash(job.hashAlgorithm).update(content).digest('hex');
+            if (job.hashAlgorithm === 'crc32') {
+                job.hash = this.spoofer.computeCRC32Hash(content);
+            } else {
+                const { createHash } = await import('node:crypto');
+                job.hash = createHash(job.hashAlgorithm).update(content).digest('hex');
+            }
 
             console.log(`✅ Completed in ${(job.processingTimeMs / 1000).toFixed(2)}s`);
             console.log(`📝 Final hash: ${job.hash}`);

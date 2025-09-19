@@ -49,7 +49,7 @@ Output Example for 0x24:
 ## Features
 
 - **Multiple Formats**: Supports PNG, JPEG, and GIF image formats
-- **Hash Algorithms**: SHA-256 and SHA-512 support
+- **Hash Algorithms**: SHA-256, SHA-512, and CRC32 support
 - **Web Interface**: Easy-to-use browser-based interface with batch processing
 - **Command Line**: Node.js CLI for single and batch processing
 - **Batch Processing**: Process multiple images simultaneously
@@ -108,6 +108,7 @@ node spoof.js 0x24 original.png altered.png sha512
 node spoof.js 0xabc123 photo.jpg spoofed.jpg sha256
 node spoof.js 0x999 image.png modified.png sha512
 node spoof.js 0x24 animation.gif spoofed.gif sha512
+node spoof.js 0xcd photo.jpg spoofed.jpg crc32
 ```
 
 #### Batch Processing
@@ -134,7 +135,7 @@ node batch-spoof.js --help
 - `target_hex`: Desired hash prefix (must start with "0x")
 - `input_image`: Path to original image file
 - `output_image`: Path for the modified image file
-- `hash_algorithm`: Optional, "sha256" or "sha512" (default: sha512)
+- `hash_algorithm`: Optional, "sha256", "sha512", or "crc32" (default: sha512)
 
 #### Batch Processing Configuration
 
@@ -152,7 +153,7 @@ node batch-spoof.js --help
       "inputPath": "photo2.png",
       "outputPath": "output/photo2_spoofed.png",
       "targetHex": "0xabc",
-      "hashAlgorithm": "sha256"
+      "hashAlgorithm": "crc32"
     }
   ],
   "patterns": [
@@ -168,7 +169,7 @@ node batch-spoof.js --help
 ```
 
 **Batch Command Options**:
-- `--algorithm, -a`: Hash algorithm (sha256|sha512) [default: sha512]
+- `--algorithm, -a`: Hash algorithm (sha256|sha512|crc32) [default: sha512]
 - `--suffix, -s`: Suffix for output filenames [default: _spoofed]
 - `--export-config`: Export batch configuration to file
 - `--export-results`: Export batch results to file
@@ -230,6 +231,11 @@ node spoof.js 0x24 image.jpg spoofed.jpg
 - Maintains GIF structure and animation compatibility
 - Preserves color tables and extension blocks
 
+### Hash Algorithm Support
+- **SHA-256**: Cryptographically secure 256-bit hash (64 hex chars)
+- **SHA-512**: Cryptographically secure 512-bit hash (128 hex chars)
+- **CRC32**: Fast 32-bit cyclic redundancy check (8 hex chars)
+
 ### Performance
 - Brute force approach with optimized iterations
 - Progress reporting every 10,000 attempts (web) / 100,000 (CLI)
@@ -278,6 +284,17 @@ Found matching hash after 326 attempts!
 Final hash: 2416934c88b17612b1e98e079bdb4402...
 Successfully created spoofed image: spoofed.gif
 Verification hash: 2416934c88b17612b1e98e079bdb4402...
+```
+
+```bash
+$ node spoof.js 0xcd photo.jpg spoofed.jpg crc32
+Starting hash spoofing for target: 0xcd
+Using hash algorithm: crc32
+Detected JPEG format
+Found matching hash after 116 attempts!
+Final hash: cd590ea2
+Successfully created spoofed image: spoofed.jpg
+Verification hash: cd590ea2
 ```
 
 ### Batch Processing Examples
@@ -458,8 +475,8 @@ While the current version includes comprehensive batch processing, there are man
 ### 🔐 **Advanced Hash Algorithm Support**
 - **MD5**: Legacy support for older systems
 - **Blake2/Blake3**: Modern, faster hash algorithms
-- **CRC32**: Lightweight option for quick testing
 - **SHA-3**: Next-generation secure hash algorithm
+- **xxHash**: Ultra-fast non-cryptographic hash algorithm
 - **Custom Hash Functions**: Plugin system for user-defined algorithms
 - **Multiple Hash Targets**: Spoof for multiple hash prefixes simultaneously
 
