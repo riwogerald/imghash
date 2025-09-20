@@ -355,7 +355,7 @@ async function main() {
   if (args.length < 3 || args.length > 4) {
     console.log('Usage: node spoof.js <target_hex> <input_image> <output_image> [hash_algorithm]');
     console.log('Example: node spoof.js 0x24 original.jpg altered.jpg sha512');
-    console.log('Supported hash algorithms: sha256, sha512 (default), crc32');
+    console.log('Supported hash algorithms: sha256, sha512 (default), sha3-256, sha3-512, crc32');
     console.log('');
     console.log('💡 For batch processing multiple files, use:');
     console.log('   node batch-spoof.js --help');
